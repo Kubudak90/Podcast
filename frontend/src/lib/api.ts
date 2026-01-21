@@ -1,0 +1,120 @@
+import type { User, Room, Recording, AuthResponse, LiveKitTokenResponse } from '../types';
+
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+
+class ApiClient {
+  private token: string | null = null;
+
+  setToken(token: string | null) {
+    this.token = token;
+    if (token) {
+      localStorage.setItem('token', token);
+    } else {
+      localStorage.removeItem('token');
+    }
+  }
+
+  getToken(): string | null {
+    if (!this.token) {
+      this.token = localStorage.getItem('token');
+    }
+    return this.token;
+  }
+
+  private async request<T>(
+    endpoint: string,
+    options: RequestInit = {}
+  ): Promise<T> {
+    const token = this.getToken();
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+      ...(token && { Authorization: `Bearer ${token}` }),
+      ...options.headers,
+    };
+
+    const response = await fetch(`${API_BASE}${endpoint}`, {
+      ...options,
+      headers,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: 'An error occurred' }));
+      throw new Error(error.message || `HTTP error ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  // Auth
+  async register(username: string, email?: string): Promise<AuthResponse> {
+    return this.request<AuthResponse>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ username, email }),
+    });
+  }
+
+  async login(username: string): Promise<AuthResponse> {
+    return this.request<AuthResponse>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username }),
+    });
+  }
+
+  async me(): Promise<User> {
+    return this.request<User>('/auth/me');
+  }
+
+  // Rooms
+  async createRoom(title: string, isPublic: boolean = true): Promise<Room> {
+    return this.request<Room>('/rooms', {
+      method: 'POST',
+      body: JSON.stringify({ title, isPublic }),
+    });
+  }
+
+  async getRoom(slug: string): Promise<Room> {
+    return this.request<Room>(`/rooms/${slug}`);
+  }
+
+  async joinRoom(slug: string): Promise<{ room: Room; participant: { role: string } }> {
+    return this.request(`/rooms/${slug}/join`, { method: 'POST' });
+  }
+
+  async leaveRoom(slug: string): Promise<void> {
+    return this.request(`/rooms/${slug}/leave`, { method: 'POST' });
+  }
+
+  async startRoom(slug: string): Promise<Room> {
+    return this.request<Room>(`/rooms/${slug}/start`, { method: 'POST' });
+  }
+
+  async endRoom(slug: string): Promise<Room> {
+    return this.request<Room>(`/rooms/${slug}/end`, { method: 'POST' });
+  }
+
+  async changeRole(slug: string, userId: string, role: 'speaker' | 'listener'): Promise<void> {
+    return this.request(`/rooms/${slug}/role`, {
+      method: 'PATCH',
+      body: JSON.stringify({ userId, role }),
+    });
+  }
+
+  // Recordings
+  async getRoomRecordings(slug: string): Promise<Recording[]> {
+    return this.request<Recording[]>(`/rooms/${slug}/recordings`);
+  }
+
+  async getRecordingDownloadUrl(recordingId: string): Promise<{ url: string }> {
+    return this.request<{ url: string }>(`/recordings/${recordingId}/download`);
+  }
+
+  // LiveKit
+  async getLiveKitToken(roomSlug: string): Promise<LiveKitTokenResponse> {
+    return this.request<LiveKitTokenResponse>('/livekit/token', {
+      method: 'POST',
+      body: JSON.stringify({ roomSlug }),
+    });
+  }
+}
+
+export const api = new ApiClient();

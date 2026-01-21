@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: podchat-postgres
+    environment:
+      POSTGRES_USER: podchat
+      POSTGRES_PASSWORD: podchat123
+      POSTGRES_DB: podchat
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U podchat"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: podchat-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # LiveKit server (optional - can use LiveKit Cloud instead)
+  # livekit:
+  #   image: livekit/livekit-server:latest
+  #   container_name: podchat-livekit
+  #   command: --config /etc/livekit.yaml
+  #   ports:
+  #     - "7880:7880"
+  #     - "7881:7881"
+  #     - "7882:7882/udp"
+  #   volumes:
+  #     - ./livekit.yaml:/etc/livekit.yaml
+
+volumes:
+  postgres_data:
+  redis_data:
