@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Header } from './components/Layout';
-import { Home, Login, Room, RoomEnded, Profile } from './pages';
+import { Home, Login, Room, RoomEnded, Profile, Listen } from './pages';
 import ErrorBoundary from './components/ErrorBoundary';
 import { ToastContainer } from './components/Toast';
 import { useEffect } from 'react';
@@ -36,6 +36,7 @@ function App() {
               <Route path="/room/:slug" element={<Room />} />
               <Route path="/room/:slug/ended" element={<RoomEnded />} />
               <Route path="/profile" element={<Profile />} />
+              <Route path="/listen/:shareSlug" element={<Listen />} />
             </Routes>
           </main>
         </div>

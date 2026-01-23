@@ -40,6 +40,38 @@ export interface Recording {
   fileSizeBytes: number;
   format: string;
   createdAt: string;
+  title?: string;
+  description?: string;
+  shareSlug?: string;
+  isPublic?: boolean;
+  playCount?: number;
+}
+
+export interface PublicRecording {
+  id: string;
+  title: string;
+  description?: string;
+  shareSlug: string;
+  durationSeconds: number;
+  playCount: number;
+  createdAt: string;
+  room: {
+    id: string;
+    slug: string;
+    title: string;
+  };
+  host: {
+    id: string;
+    username: string;
+    avatarUrl?: string;
+  };
+}
+
+export interface RecordingFeedResponse {
+  recordings: PublicRecording[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 export interface RoomState {
@@ -111,4 +143,24 @@ export interface PublicRoomsResponse {
   total: number;
   limit: number;
   offset: number;
+}
+
+export interface UserProfile {
+  id: string;
+  username: string;
+  avatarUrl?: string;
+  bio?: string;
+  createdAt: string;
+  followerCount: number;
+  followingCount: number;
+  roomCount: number;
+  isFollowing: boolean;
+}
+
+export interface FollowUser {
+  id: string;
+  username: string;
+  avatarUrl?: string;
+  bio?: string;
+  followedAt: string;
 }

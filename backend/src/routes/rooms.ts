@@ -8,6 +8,7 @@ import { createRoomSchema, changeRoleSchema, joinRoomSchema } from '../lib/valid
 import { startRoomRecording, stopRoomRecording } from '../lib/livekit.js';
 import { emitParticipantJoined, emitParticipantLeft, emitRoomStatusChanged, emitParticipantRoleChanged } from '../lib/socket.js';
 import { logRoom, logRecording, logError } from '../lib/logger.js';
+import { notifyFollowersOfLive } from '../lib/push.js';
 
 const router = Router();
 
@@ -390,6 +391,11 @@ router.post('/:slug/start', async (req: AuthRequest<{ slug: string }>, res: Resp
 
     // Emit socket event for room status change
     emitRoomStatusChanged(room.slug, 'live', !!egressId);
+
+    // Notify followers that host is live (fire and forget)
+    notifyFollowersOfLive(req.userId!, req.user!.username, room.title, room.slug).catch(() => {
+      // Ignore notification errors
+    });
 
     res.json({
       id: updatedRoom.id,

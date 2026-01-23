@@ -4,6 +4,7 @@ import { Avatar, Button, Modal } from '../components/UI';
 import { useNavigate, Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { toast } from '../components/Toast';
+import { NotificationToggle } from '../components/NotificationToggle';
 import type { RoomHistoryItem } from '../types';
 
 // Resmi canvas kullanarak yeniden boyutlandir
@@ -335,9 +336,14 @@ export function Profile() {
         {/* Settings */}
         <div className="card">
           <h2 className="font-semibold mb-4">Ayarlar</h2>
-          <Button variant="danger" onClick={handleLogout}>
-            Cikis Yap
-          </Button>
+          <div className="space-y-4">
+            <NotificationToggle />
+            <div className="pt-4 border-t border-slate-700">
+              <Button variant="danger" onClick={handleLogout}>
+                Cikis Yap
+              </Button>
+            </div>
+          </div>
         </div>
       </div>
 

@@ -5,6 +5,8 @@ import roomsRoutes from './routes/rooms.js';
 import recordingsRoutes from './routes/recordings.js';
 import livekitRoutes from './routes/livekit.js';
 import chatRoutes from './routes/chat.js';
+import usersRoutes from './routes/users.js';
+import notificationsRoutes from './routes/notifications.js';
 import { apiLimiter } from './middleware/rateLimit.js';
 import { logError } from './lib/logger.js';
 
@@ -35,6 +37,8 @@ export function createApp() {
   app.use('/api', recordingsRoutes); // For /api/rooms/:slug/recordings path
   app.use('/api', chatRoutes); // For /api/rooms/:slug/chat path
   app.use('/api/livekit', livekitRoutes);
+  app.use('/api/users', usersRoutes);
+  app.use('/api/notifications', notificationsRoutes);
 
   // Error handler
   app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {

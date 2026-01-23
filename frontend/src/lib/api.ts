@@ -1,4 +1,4 @@
-import type { User, Room, Recording, AuthResponse, LiveKitTokenResponse, RoomHistoryItem, PublicRoomsResponse } from '../types';
+import type { User, Room, Recording, AuthResponse, LiveKitTokenResponse, RoomHistoryItem, PublicRoomsResponse, UserProfile, FollowUser, PublicRecording, RecordingFeedResponse } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
@@ -149,6 +149,85 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify({ roomSlug }),
     });
+  }
+
+  // Users
+  async getUserProfile(userId: string): Promise<UserProfile> {
+    return this.request<UserProfile>(`/users/${userId}`);
+  }
+
+  async followUser(userId: string): Promise<{ message: string }> {
+    return this.request(`/users/${userId}/follow`, {
+      method: 'POST',
+    });
+  }
+
+  async unfollowUser(userId: string): Promise<{ message: string }> {
+    return this.request(`/users/${userId}/follow`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getFollowers(userId: string, limit?: number, offset?: number): Promise<FollowUser[]> {
+    const params = new URLSearchParams();
+    if (limit) params.set('limit', String(limit));
+    if (offset) params.set('offset', String(offset));
+    const query = params.toString();
+    return this.request<FollowUser[]>(`/users/${userId}/followers${query ? `?${query}` : ''}`);
+  }
+
+  async getFollowing(userId: string, limit?: number, offset?: number): Promise<FollowUser[]> {
+    const params = new URLSearchParams();
+    if (limit) params.set('limit', String(limit));
+    if (offset) params.set('offset', String(offset));
+    const query = params.toString();
+    return this.request<FollowUser[]>(`/users/${userId}/following${query ? `?${query}` : ''}`);
+  }
+
+  // Notifications
+  async getVapidPublicKey(): Promise<{ publicKey: string }> {
+    return this.request('/notifications/vapid-key');
+  }
+
+  async subscribeToPush(subscription: PushSubscriptionJSON): Promise<{ message: string }> {
+    return this.request('/notifications/subscribe', {
+      method: 'POST',
+      body: JSON.stringify({
+        endpoint: subscription.endpoint,
+        keys: subscription.keys,
+      }),
+    });
+  }
+
+  async unsubscribeFromPush(endpoint: string): Promise<{ message: string }> {
+    return this.request('/notifications/subscribe', {
+      method: 'DELETE',
+      body: JSON.stringify({ endpoint }),
+    });
+  }
+
+  // Recordings sharing
+  async updateRecording(recordingId: string, data: { title?: string; description?: string; isPublic?: boolean }): Promise<Recording> {
+    return this.request<Recording>(`/recordings/${recordingId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getPublicRecording(shareSlug: string): Promise<PublicRecording> {
+    return this.request<PublicRecording>(`/recordings/public/${shareSlug}`);
+  }
+
+  async getPublicRecordingDownload(shareSlug: string): Promise<{ url: string }> {
+    return this.request<{ url: string }>(`/recordings/public/${shareSlug}/download`);
+  }
+
+  async getRecordingsFeed(limit?: number, offset?: number): Promise<RecordingFeedResponse> {
+    const params = new URLSearchParams();
+    if (limit) params.set('limit', String(limit));
+    if (offset) params.set('offset', String(offset));
+    const query = params.toString();
+    return this.request<RecordingFeedResponse>(`/recordings/feed${query ? `?${query}` : ''}`);
   }
 }
 

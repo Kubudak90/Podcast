@@ -18,9 +18,12 @@ model User {
   createdAt DateTime @default(now())
 
   // Relations
-  hostedRooms  Room[]            @relation("HostedRooms")
-  participants RoomParticipant[]
-  messages     ChatMessage[]
+  hostedRooms            Room[]                     @relation("HostedRooms")
+  participants           RoomParticipant[]
+  messages               ChatMessage[]
+  followers              UserFollow[]               @relation("Following")
+  following              UserFollow[]               @relation("Followers")
+  notificationSubscriptions NotificationSubscription[]
 
   @@map("users")
 }
@@ -65,13 +68,18 @@ model RoomParticipant {
 }
 
 model Recording {
-  id             String   @id @default(uuid())
-  roomId         String
-  fileUrl        String
+  id              String   @id @default(uuid())
+  roomId          String
+  fileUrl         String
+  title           String?  // Optional custom title for sharing
+  shareSlug       String?  @unique // Unique slug for public sharing
+  description     String?  // Optional description for sharing
+  isPublic        Boolean  @default(false) // Whether recording is publicly shareable
   durationSeconds Int?
-  fileSizeBytes  BigInt?
-  format         String   @default("mp3")
-  createdAt      DateTime @default(now())
+  fileSizeBytes   BigInt?
+  format          String   @default("mp3")
+  playCount       Int      @default(0) // Track play counts
+  createdAt       DateTime @default(now())
 
   // Relations
   room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
@@ -91,4 +99,32 @@ model ChatMessage {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("chat_messages")
+}
+
+model UserFollow {
+  id          String   @id @default(uuid())
+  followerId  String   // User who is following
+  followingId String   // User being followed
+  createdAt   DateTime @default(now())
+
+  // Relations
+  follower  User @relation("Followers", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("Following", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followingId])
+  @@map("user_follows")
+}
+
+model NotificationSubscription {
+  id        String   @id @default(uuid())
+  userId    String
+  endpoint  String   @unique // Push subscription endpoint
+  p256dh    String   // Push subscription key
+  auth      String   // Push subscription auth
+  createdAt DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_subscriptions")
 }
