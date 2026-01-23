@@ -22,7 +22,8 @@ export interface Room {
 
 export interface Participant {
   id: string;
-  odaId: string;
+  roomId: string;
+  roomSlug?: string;
   userId: string;
   username: string;
   avatarUrl?: string;

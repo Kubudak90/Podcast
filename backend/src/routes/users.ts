@@ -107,8 +107,8 @@ router.post('/:userId/follow', async (req: AuthRequest<{ userId: string }>, res:
     });
 
     // Send push notification to the followed user (fire and forget)
-    notifyNewFollower(userId, req.user!.username, req.user!.avatarUrl || undefined).catch(() => {
-      // Ignore notification errors
+    notifyNewFollower(userId, req.user!.username, req.user!.avatarUrl || undefined).catch((error) => {
+      logError(error as Error, { action: 'notify_new_follower', followerId: req.userId, followingId: userId });
     });
 
     res.json({ message: 'Successfully followed user' });

@@ -44,6 +44,13 @@ export const getLiveKitTokenSchema = z.object({
   roomSlug: z.string().min(1, 'Room slug is required'),
 });
 
+// Recording schema
+export const recordingUpdateSchema = z.object({
+  title: z.string().min(1, 'Title is required').max(100, 'Title must be at most 100 characters').optional(),
+  description: z.string().max(500, 'Description must be at most 500 characters').optional().nullable(),
+  isPublic: z.boolean().optional(),
+});
+
 // Profile schema
 export const updateProfileSchema = z.object({
   username: z
@@ -64,3 +71,4 @@ export type CreateRoomInput = z.infer<typeof createRoomSchema>;
 export type ChangeRoleInput = z.infer<typeof changeRoleSchema>;
 export type GetLiveKitTokenInput = z.infer<typeof getLiveKitTokenSchema>;
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
+export type RecordingUpdateInput = z.infer<typeof recordingUpdateSchema>;

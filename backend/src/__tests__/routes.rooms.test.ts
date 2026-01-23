@@ -516,10 +516,18 @@ describe('Room Routes', () => {
       };
 
       mockPrisma.room.findUnique.mockResolvedValue(mockRoom);
-      mockPrisma.$transaction.mockResolvedValue([
-        { ...mockRoom, status: 'ended', endedAt: new Date(), egressId: null },
-        { count: 1 },
-      ]);
+
+      // Mock interactive transaction for end room
+      const updatedRoom = { ...mockRoom, status: 'ended', endedAt: new Date(), egressId: null };
+      mockPrisma.$transaction.mockImplementation(async (callback: (tx: typeof mockPrisma) => Promise<unknown>) => {
+        // Create a transaction context with the same mock functions
+        const txMock = {
+          recording: { create: vi.fn().mockResolvedValue({}) },
+          room: { update: vi.fn().mockResolvedValue(updatedRoom) },
+          roomParticipant: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+        };
+        return await callback(txMock as unknown as typeof mockPrisma);
+      });
 
       const response = await request(app)
         .post('/api/rooms/abc12345/end')

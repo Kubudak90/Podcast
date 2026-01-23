@@ -187,8 +187,8 @@ router.get('/:slug', async (req: AuthRequest<{ slug: string }>, res: Response) =
       endedAt: room.endedAt?.toISOString(),
       participants: participants.map((p: typeof participants[number]) => ({
         id: p.id,
-        odaId: p.roomId,
-        odaSlug: room.slug,
+        roomId: p.roomId,
+        roomSlug: room.slug,
         userId: p.userId,
         username: p.user.username,
         avatarUrl: p.user.avatarUrl,
@@ -369,10 +369,14 @@ router.post('/:slug/start', async (req: AuthRequest<{ slug: string }>, res: Resp
       return res.status(400).json({ message: 'Room is not in waiting state' });
     }
 
+    // Create timestamp for consistent filepath
+    const startedAt = new Date();
+    const timestamp = startedAt.getTime();
+
     // Start recording via LiveKit Egress
     let egressId: string | null = null;
     try {
-      const result = await startRoomRecording(room.slug);
+      const result = await startRoomRecording(room.slug, timestamp);
       egressId = result.egressId;
       logRecording('start', room.slug, egressId);
     } catch (egressError) {
@@ -384,7 +388,7 @@ router.post('/:slug/start', async (req: AuthRequest<{ slug: string }>, res: Resp
       where: { id: room.id },
       data: {
         status: 'live',
-        startedAt: new Date(),
+        startedAt,
         egressId,
       },
     });
@@ -393,8 +397,8 @@ router.post('/:slug/start', async (req: AuthRequest<{ slug: string }>, res: Resp
     emitRoomStatusChanged(room.slug, 'live', !!egressId);
 
     // Notify followers that host is live (fire and forget)
-    notifyFollowersOfLive(req.userId!, req.user!.username, room.title, room.slug).catch(() => {
-      // Ignore notification errors
+    notifyFollowersOfLive(req.userId!, req.user!.username, room.title, room.slug).catch((error) => {
+      logError(error as Error, { action: 'notify_followers_live', userId: req.userId, roomSlug: room.slug });
     });
 
     res.json({
@@ -437,7 +441,8 @@ router.post('/:slug/end', async (req: AuthRequest<{ slug: string }>, res: Respon
       return res.status(400).json({ message: 'Room has already ended' });
     }
 
-    // Stop recording if active
+    // Stop recording if active and prepare recording data
+    let recordingData: { roomId: string; fileUrl: string; durationSeconds: number | null; format: string } | null = null;
     if (room.egressId) {
       try {
         await stopRoomRecording(room.egressId);
@@ -448,32 +453,39 @@ router.post('/:slug/end', async (req: AuthRequest<{ slug: string }>, res: Respon
           ? Math.floor((Date.now() - room.startedAt.getTime()) / 1000)
           : null;
 
-        // Create recording entry
-        await prisma.recording.create({
-          data: {
-            roomId: room.id,
-            fileUrl: `recordings/${room.slug}-${room.startedAt?.getTime()}.mp3`,
-            durationSeconds,
-            format: 'mp3',
-          },
-        });
+        recordingData = {
+          roomId: room.id,
+          fileUrl: `recordings/${room.slug}-${room.startedAt?.getTime()}.mp3`,
+          durationSeconds,
+          format: 'mp3',
+        };
       } catch (egressError) {
         logRecording('error', room.slug, room.egressId, (egressError as Error).message);
         // Continue ending the room even if recording stop fails
       }
     }
 
-    // End room and mark all participants as left
-    const [updatedRoom] = await prisma.$transaction([
-      prisma.room.update({
+    // End room, mark all participants as left, and create recording - all in a transaction
+    const updatedRoom = await prisma.$transaction(async (tx) => {
+      // Create recording entry if we have recording data
+      if (recordingData) {
+        await tx.recording.create({
+          data: recordingData,
+        });
+      }
+
+      // Update room status
+      const updated = await tx.room.update({
         where: { id: room.id },
         data: {
           status: 'ended',
           endedAt: new Date(),
           egressId: null, // Clear egress ID
         },
-      }),
-      prisma.roomParticipant.updateMany({
+      });
+
+      // Mark all participants as left
+      await tx.roomParticipant.updateMany({
         where: {
           roomId: room.id,
           leftAt: null,
@@ -481,8 +493,10 @@ router.post('/:slug/end', async (req: AuthRequest<{ slug: string }>, res: Respon
         data: {
           leftAt: new Date(),
         },
-      }),
-    ]);
+      });
+
+      return updated;
+    });
 
     // Emit socket event for room ended
     emitRoomStatusChanged(room.slug, 'ended');

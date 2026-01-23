@@ -22,7 +22,7 @@ export function initializeSocket(httpServer: HttpServer): Server {
   });
 
   // Authentication middleware
-  io.use((socket: AuthenticatedSocket, next) => {
+  io.use(async (socket: AuthenticatedSocket, next) => {
     const token = socket.handshake.auth.token;
 
     if (!token) {
@@ -31,8 +31,19 @@ export function initializeSocket(httpServer: HttpServer): Server {
 
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as { userId: string; username: string };
-      socket.userId = decoded.userId;
-      socket.username = decoded.username;
+
+      // Verify user still exists in database
+      const user = await prisma.user.findUnique({
+        where: { id: decoded.userId },
+        select: { id: true, username: true },
+      });
+
+      if (!user) {
+        return next(new Error('User not found'));
+      }
+
+      socket.userId = user.id;
+      socket.username = user.username;
       next();
     } catch {
       next(new Error('Invalid token'));

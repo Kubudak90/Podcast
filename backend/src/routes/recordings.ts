@@ -3,6 +3,8 @@ import { nanoid } from 'nanoid';
 import { prisma } from '../lib/prisma.js';
 import { getPresignedDownloadUrl } from '../lib/storage.js';
 import { authMiddleware, AuthRequest, optionalAuthMiddleware } from '../middleware/auth.js';
+import { validate } from '../middleware/validate.js';
+import { recordingUpdateSchema } from '../lib/validation.js';
 import { logError } from '../lib/logger.js';
 
 const router = Router();
@@ -37,7 +39,7 @@ router.get('/rooms/:slug/recordings', authMiddleware, async (req: AuthRequest<{ 
       }))
     );
   } catch (error) {
-    console.error('Get recordings error:', error);
+    logError(error as Error, { action: 'get_recordings' });
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -49,10 +51,27 @@ router.get('/:id/download', authMiddleware, async (req: AuthRequest<{ id: string
 
     const recording = await prisma.recording.findUnique({
       where: { id },
+      include: {
+        room: {
+          select: { id: true },
+        },
+      },
     });
 
     if (!recording) {
       return res.status(404).json({ message: 'Recording not found' });
+    }
+
+    // Check if user was a participant in this room
+    const participant = await prisma.roomParticipant.findFirst({
+      where: {
+        roomId: recording.room.id,
+        userId: req.userId!,
+      },
+    });
+
+    if (!participant) {
+      return res.status(403).json({ message: 'You do not have permission to download this recording' });
     }
 
     // Extract the key from the file URL
@@ -69,7 +88,7 @@ router.get('/:id/download', authMiddleware, async (req: AuthRequest<{ id: string
 });
 
 // PATCH /api/recordings/:id - Update recording (owner only)
-router.patch('/:id', authMiddleware, async (req: AuthRequest<{ id: string }>, res: Response) => {
+router.patch('/:id', authMiddleware, validate(recordingUpdateSchema), async (req: AuthRequest<{ id: string }>, res: Response) => {
   try {
     const { id } = req.params;
     const { title, description, isPublic } = req.body;
