@@ -1,12 +1,18 @@
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '../../lib/store';
 import { Avatar } from '../UI';
+import { api } from '../../lib/api';
 
 export function Header() {
   const { user, isAuthenticated, logout } = useAuthStore();
 
+  const handleLogout = () => {
+    api.setToken(null);
+    logout();
+  };
+
   return (
-    <header className="bg-slate-800 border-b border-slate-700">
+    <header className="bg-slate-800 border-b border-slate-700 safe-area-pt">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           <Link to="/" className="flex items-center gap-2">
@@ -39,7 +45,7 @@ export function Header() {
                   </span>
                 </Link>
                 <button
-                  onClick={logout}
+                  onClick={handleLogout}
                   className="text-sm text-slate-400 hover:text-white transition-colors"
                 >
                   Cikis

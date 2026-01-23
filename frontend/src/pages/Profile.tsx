@@ -1,12 +1,14 @@
 import { useAuthStore } from '../lib/store';
 import { Avatar, Button } from '../components/UI';
 import { useNavigate } from 'react-router-dom';
+import { api } from '../lib/api';
 
 export function Profile() {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
 
   const handleLogout = () => {
+    api.setToken(null);
     logout();
     navigate('/');
   };
@@ -17,7 +19,7 @@ export function Profile() {
   }
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] p-4">
+    <div className="min-h-screen-safe p-4 safe-area-pb">
       <div className="max-w-2xl mx-auto">
         <div className="card mb-6">
           <div className="flex items-center gap-4">

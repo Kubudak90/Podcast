@@ -10,12 +10,19 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
+  /* iOS Safe Area CSS Variables */
+  --sat: env(safe-area-inset-top, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
 }
 
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  min-height: 100dvh; /* Dynamic viewport height for iOS */
 }
 
 @layer base {
@@ -46,5 +53,35 @@ body {
 
   .card {
     @apply bg-slate-800 rounded-xl p-6 shadow-lg;
+  }
+
+  /* iOS Safe Area Classes */
+  .safe-area-pt {
+    padding-top: var(--sat);
+  }
+
+  .safe-area-pb {
+    padding-bottom: max(1rem, var(--sab));
+  }
+
+  .safe-area-pl {
+    padding-left: var(--sal);
+  }
+
+  .safe-area-pr {
+    padding-right: var(--sar);
+  }
+
+  .safe-area-inset {
+    padding-top: var(--sat);
+    padding-bottom: var(--sab);
+    padding-left: var(--sal);
+    padding-right: var(--sar);
+  }
+
+  /* Full height accounting for safe areas and header */
+  .min-h-screen-safe {
+    min-height: calc(100vh - 4rem);
+    min-height: calc(100dvh - 4rem);
   }
 }

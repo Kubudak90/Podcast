@@ -16,10 +16,11 @@ function App() {
       api.me().then(user => {
         setAuth(user, token);
       }).catch(() => {
+        api.setToken(null);
         logout();
       });
     }
-  }, []);
+  }, [token, setAuth, logout]);
 
   return (
     <BrowserRouter>

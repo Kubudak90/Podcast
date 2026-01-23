@@ -6,13 +6,26 @@ import {
   useParticipants,
   useLocalParticipant,
   useTracks,
+  useConnectionState,
 } from '@livekit/components-react';
-import { Track, RoomEvent } from 'livekit-client';
+import { Track, ConnectionState } from 'livekit-client';
 import type { Room as LKRoom } from 'livekit-client';
 import { Button, Avatar } from '../components/UI';
 import { api } from '../lib/api';
 import { useAuthStore, useRoomStore } from '../lib/store';
 import type { Room as RoomType } from '../types';
+
+// Mikrofon izni kontrolu
+async function checkMicrophonePermission(): Promise<boolean> {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream.getTracks().forEach(track => track.stop());
+    return true;
+  } catch (err) {
+    console.error('Mikrofon izni alinamadi:', err);
+    return false;
+  }
+}
 
 function ParticipantTile({ participant }: { participant: ReturnType<typeof useParticipants>[0] }) {
   const tracks = useTracks([Track.Source.Microphone], {
@@ -62,7 +75,14 @@ function RoomContent({ room }: { room: RoomType }) {
   const { isHost, isMuted, setIsMuted, reset } = useRoomStore();
   const participants = useParticipants();
   const { localParticipant } = useLocalParticipant();
+  const connectionState = useConnectionState();
   const [isLive, setIsLive] = useState(room.status === 'live');
+  const [micPermission, setMicPermission] = useState<boolean | null>(null);
+
+  // Mikrofon izni kontrolu
+  useEffect(() => {
+    checkMicrophonePermission().then(setMicPermission);
+  }, []);
 
   // Mikrofonu localParticipant durumu ile senkronize et
   useEffect(() => {
@@ -73,10 +93,25 @@ function RoomContent({ room }: { room: RoomType }) {
   }, [localParticipant, localParticipant?.isMicrophoneEnabled, setIsMuted]);
 
   const handleToggleMute = async () => {
-    if (localParticipant) {
+    if (!localParticipant) return;
+
+    // Mikrofon izni yoksa iste
+    if (!micPermission) {
+      const hasPermission = await checkMicrophonePermission();
+      setMicPermission(hasPermission);
+      if (!hasPermission) {
+        alert('Mikrofon izni gerekli. Lutfen tarayici ayarlarindan izin verin.');
+        return;
+      }
+    }
+
+    try {
       const newMicState = !localParticipant.isMicrophoneEnabled;
       await localParticipant.setMicrophoneEnabled(newMicState);
       setIsMuted(!newMicState);
+    } catch (err) {
+      console.error('Mikrofon durumu degistirilemedi:', err);
+      alert('Mikrofon acilamadi. Lutfen tarayici ayarlarinizi kontrol edin.');
     }
   };
 
@@ -116,7 +151,7 @@ function RoomContent({ room }: { room: RoomType }) {
   };
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] flex flex-col">
+    <div className="min-h-screen-safe flex flex-col">
       {/* Header */}
       <div className="bg-slate-800 border-b border-slate-700 p-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
@@ -134,6 +169,15 @@ function RoomContent({ room }: { room: RoomType }) {
               <span className="text-slate-500 text-sm">
                 {participants.length} katilimci
               </span>
+              {connectionState !== ConnectionState.Connected && (
+                <span className="flex items-center gap-1 text-yellow-500 text-sm">
+                  <span className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse" />
+                  {connectionState === ConnectionState.Connecting ? 'Baglaniyor...' : 'Baglanti kesik'}
+                </span>
+              )}
+              {micPermission === false && (
+                <span className="text-orange-400 text-sm">Mikrofon izni yok</span>
+              )}
             </div>
           </div>
           <Button variant="ghost" size="sm" onClick={copyLink}>
@@ -278,7 +322,7 @@ export function Room() {
 
   if (isLoading) {
     return (
-      <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center">
+      <div className="min-h-screen-safe flex items-center justify-center">
         <div className="animate-spin w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full" />
       </div>
     );
@@ -286,7 +330,7 @@ export function Room() {
 
   if (error) {
     return (
-      <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4">
+      <div className="min-h-screen-safe flex items-center justify-center p-4">
         <div className="card text-center">
           <p className="text-red-400 mb-4">{error}</p>
           <Button onClick={() => navigate('/')}>Ana Sayfaya Don</Button>
@@ -307,12 +351,26 @@ export function Room() {
       audio={true}
       video={false}
       onConnected={handleConnected}
+      onError={(error) => {
+        console.error('LiveKit error:', error);
+        setError(`Baglanti hatasi: ${error.message}`);
+      }}
       options={{
         audioCaptureDefaults: {
           autoGainControl: true,
           echoCancellation: true,
           noiseSuppression: true,
         },
+        publishDefaults: {
+          audioPreset: {
+            maxBitrate: 64000,
+          },
+          dtx: true,
+          red: true,
+        },
+        disconnectOnPageLeave: true,
+        adaptiveStream: true,
+        dynacast: true,
       }}
     >
       <RoomContent room={room} />

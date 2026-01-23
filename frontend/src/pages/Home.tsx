@@ -110,7 +110,7 @@ export function Home() {
   };
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center p-4">
+    <div className="min-h-screen-safe flex flex-col items-center justify-center p-4 safe-area-pb">
       <div className="text-center mb-12">
         <h1 className="text-4xl sm:text-5xl font-bold mb-4">
           Arkadaslarinla{' '}
