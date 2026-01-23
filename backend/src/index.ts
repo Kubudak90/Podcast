@@ -1,14 +1,21 @@
 import 'dotenv/config';
 import express from 'express';
+import { createServer } from 'http';
 import cors from 'cors';
 import authRoutes from './routes/auth.js';
 import roomsRoutes from './routes/rooms.js';
 import recordingsRoutes from './routes/recordings.js';
 import livekitRoutes from './routes/livekit.js';
 import { apiLimiter } from './middleware/rateLimit.js';
+import { initializeSocket } from './lib/socket.js';
+import { logger, logError } from './lib/logger.js';
 
 const app = express();
+const httpServer = createServer(app);
 const PORT = process.env.PORT || 3001;
+
+// Initialize Socket.io
+initializeSocket(httpServer);
 
 // Middleware
 app.use(cors({
@@ -34,10 +41,10 @@ app.use('/api/livekit', livekitRoutes);
 
 // Error handler
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error('Unhandled error:', err);
+  logError(err, { path: req.path, method: req.method });
   res.status(500).json({ message: 'Internal server error' });
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+httpServer.listen(PORT, () => {
+  logger.info({ port: PORT }, 'Server running');
 });

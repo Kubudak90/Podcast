@@ -11,8 +11,10 @@ import {
 import { Track, ConnectionState } from 'livekit-client';
 import type { Room as LKRoom } from 'livekit-client';
 import { Button, Avatar } from '../components/UI';
+import { toast } from '../components/Toast';
 import { api } from '../lib/api';
 import { useAuthStore, useRoomStore } from '../lib/store';
+import { useSocket } from '../hooks/useSocket';
 import type { Room as RoomType } from '../types';
 
 // Mikrofon izni kontrolu
@@ -79,6 +81,21 @@ function RoomContent({ room }: { room: RoomType }) {
   const [isLive, setIsLive] = useState(room.status === 'live');
   const [micPermission, setMicPermission] = useState<boolean | null>(null);
 
+  // Socket event handlers for real-time updates
+  const handleStatusChanged = useCallback((payload: { status: string; isRecording?: boolean }) => {
+    if (payload.status === 'live') {
+      setIsLive(true);
+    } else if (payload.status === 'ended') {
+      navigate(`/room/${room.slug}/ended`);
+    }
+  }, [navigate, room.slug]);
+
+  // Connect to socket room channel
+  useSocket({
+    roomSlug: room.slug,
+    onStatusChanged: handleStatusChanged,
+  });
+
   // Mikrofon izni kontrolu
   useEffect(() => {
     checkMicrophonePermission().then(setMicPermission);
@@ -119,8 +136,10 @@ function RoomContent({ room }: { room: RoomType }) {
     try {
       await api.startRoom(room.slug);
       setIsLive(true);
+      toast.success('Yayin basladi!');
     } catch (err) {
       console.error('Failed to start room:', err);
+      toast.error('Yayin baslatilamadi');
     }
   };
 
@@ -130,6 +149,7 @@ function RoomContent({ room }: { room: RoomType }) {
       navigate(`/room/${room.slug}/ended`);
     } catch (err) {
       console.error('Failed to end room:', err);
+      toast.error('Yayin bitirilemedi');
     }
   };
 
@@ -148,6 +168,7 @@ function RoomContent({ room }: { room: RoomType }) {
   const copyLink = () => {
     const url = `${window.location.origin}/room/${room.slug}`;
     navigator.clipboard.writeText(url);
+    toast.success('Link panoya kopyalandi!');
   };
 
   return (

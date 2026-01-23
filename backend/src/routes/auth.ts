@@ -4,6 +4,7 @@ import { authMiddleware, generateToken, AuthRequest } from '../middleware/auth.j
 import { validate } from '../middleware/validate.js';
 import { authLimiter } from '../middleware/rateLimit.js';
 import { registerSchema, loginSchema } from '../lib/validation.js';
+import { logAuth, logError } from '../lib/logger.js';
 
 const router = Router();
 
@@ -31,6 +32,8 @@ router.post('/register', authLimiter, validate(registerSchema), async (req: Requ
 
     const token = generateToken(user.id, user.username);
 
+    logAuth('register', user.id, user.username, true);
+
     res.status(201).json({
       user: {
         id: user.id,
@@ -42,7 +45,7 @@ router.post('/register', authLimiter, validate(registerSchema), async (req: Requ
       token,
     });
   } catch (error) {
-    console.error('Register error:', error);
+    logError(error as Error, { action: 'register' });
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -62,6 +65,8 @@ router.post('/login', authLimiter, validate(loginSchema), async (req: Request, r
 
     const token = generateToken(user.id, user.username);
 
+    logAuth('login', user.id, user.username, true);
+
     res.json({
       user: {
         id: user.id,
@@ -73,7 +78,7 @@ router.post('/login', authLimiter, validate(loginSchema), async (req: Request, r
       token,
     });
   } catch (error) {
-    console.error('Login error:', error);
+    logError(error as Error, { action: 'login' });
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -97,7 +102,7 @@ router.get('/me', authMiddleware, async (req: AuthRequest, res: Response) => {
       createdAt: user.createdAt.toISOString(),
     });
   } catch (error) {
-    console.error('Me error:', error);
+    logError(error as Error, { action: 'me', userId: req.userId });
     res.status(500).json({ message: 'Internal server error' });
   }
 });

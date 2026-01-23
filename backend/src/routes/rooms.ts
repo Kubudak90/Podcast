@@ -6,6 +6,8 @@ import { validate } from '../middleware/validate.js';
 import { roomCreateLimiter } from '../middleware/rateLimit.js';
 import { createRoomSchema, changeRoleSchema } from '../lib/validation.js';
 import { startRoomRecording, stopRoomRecording } from '../lib/livekit.js';
+import { emitParticipantJoined, emitParticipantLeft, emitRoomStatusChanged, emitParticipantRoleChanged } from '../lib/socket.js';
+import { logRoom, logRecording, logError } from '../lib/logger.js';
 
 const router = Router();
 
@@ -51,7 +53,7 @@ router.post('/', roomCreateLimiter, validate(createRoomSchema), async (req: Auth
       endedAt: room.endedAt?.toISOString(),
     });
   } catch (error) {
-    console.error('Create room error:', error);
+    logError(error as Error, { action: 'create_room', userId: req.userId });
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -106,7 +108,7 @@ router.get('/:slug', async (req: AuthRequest, res: Response) => {
       })),
     });
   } catch (error) {
-    console.error('Get room error:', error);
+    logError(error as Error, { action: 'get_room' });
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -184,6 +186,14 @@ router.post('/:slug/join', async (req: AuthRequest, res: Response) => {
           },
         });
 
+    // Emit socket event for new participant
+    emitParticipantJoined(room.slug, {
+      userId: req.userId!,
+      username: req.user!.username,
+      role: participant.role,
+      avatarUrl: req.user!.avatarUrl,
+    });
+
     res.json({
       room: {
         id: room.id,
@@ -202,7 +212,7 @@ router.post('/:slug/join', async (req: AuthRequest, res: Response) => {
       },
     });
   } catch (error) {
-    console.error('Join room error:', error);
+    logError(error as Error, { action: 'join_room', userId: req.userId });
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -231,9 +241,12 @@ router.post('/:slug/leave', async (req: AuthRequest, res: Response) => {
       },
     });
 
+    // Emit socket event for participant leaving
+    emitParticipantLeft(room.slug, req.userId!);
+
     res.json({ message: 'Left room successfully' });
   } catch (error) {
-    console.error('Leave room error:', error);
+    logError(error as Error, { action: 'leave_room', userId: req.userId });
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -264,9 +277,9 @@ router.post('/:slug/start', async (req: AuthRequest, res: Response) => {
     try {
       const result = await startRoomRecording(room.slug);
       egressId = result.egressId;
-      console.log(`Recording started for room ${room.slug}, egressId: ${egressId}`);
+      logRecording('start', room.slug, egressId);
     } catch (egressError) {
-      console.error('Failed to start recording:', egressError);
+      logRecording('error', room.slug, undefined, (egressError as Error).message);
       // Continue without recording - don't block the room start
     }
 
@@ -278,6 +291,9 @@ router.post('/:slug/start', async (req: AuthRequest, res: Response) => {
         egressId,
       },
     });
+
+    // Emit socket event for room status change
+    emitRoomStatusChanged(room.slug, 'live', !!egressId);
 
     res.json({
       id: updatedRoom.id,
@@ -293,7 +309,7 @@ router.post('/:slug/start', async (req: AuthRequest, res: Response) => {
       endedAt: updatedRoom.endedAt?.toISOString(),
     });
   } catch (error) {
-    console.error('Start room error:', error);
+    logError(error as Error, { action: 'start_room', userId: req.userId });
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -323,7 +339,7 @@ router.post('/:slug/end', async (req: AuthRequest, res: Response) => {
     if (room.egressId) {
       try {
         await stopRoomRecording(room.egressId);
-        console.log(`Recording stopped for room ${room.slug}, egressId: ${room.egressId}`);
+        logRecording('stop', room.slug, room.egressId);
 
         // Calculate duration
         const durationSeconds = room.startedAt
@@ -340,7 +356,7 @@ router.post('/:slug/end', async (req: AuthRequest, res: Response) => {
           },
         });
       } catch (egressError) {
-        console.error('Failed to stop recording:', egressError);
+        logRecording('error', room.slug, room.egressId, (egressError as Error).message);
         // Continue ending the room even if recording stop fails
       }
     }
@@ -366,6 +382,9 @@ router.post('/:slug/end', async (req: AuthRequest, res: Response) => {
       }),
     ]);
 
+    // Emit socket event for room ended
+    emitRoomStatusChanged(room.slug, 'ended');
+
     res.json({
       id: updatedRoom.id,
       slug: updatedRoom.slug,
@@ -379,7 +398,7 @@ router.post('/:slug/end', async (req: AuthRequest, res: Response) => {
       endedAt: updatedRoom.endedAt?.toISOString(),
     });
   } catch (error) {
-    console.error('End room error:', error);
+    logError(error as Error, { action: 'end_room', userId: req.userId });
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -411,9 +430,12 @@ router.patch('/:slug/role', validate(changeRoleSchema), async (req: AuthRequest,
       data: { role },
     });
 
+    // Emit socket event for role change
+    emitParticipantRoleChanged(room.slug, userId, role);
+
     res.json({ message: 'Role updated successfully' });
   } catch (error) {
-    console.error('Change role error:', error);
+    logError(error as Error, { action: 'change_role', userId: req.userId });
     res.status(500).json({ message: 'Internal server error' });
   }
 });

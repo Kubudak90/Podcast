@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Header } from './components/Layout';
 import { Home, Login, Room, RoomEnded, Profile } from './pages';
 import ErrorBoundary from './components/ErrorBoundary';
+import { ToastContainer } from './components/Toast';
 import { useEffect } from 'react';
 import { api } from './lib/api';
 import { useAuthStore } from './lib/store';
@@ -38,6 +39,7 @@ function App() {
             </Routes>
           </main>
         </div>
+        <ToastContainer />
       </BrowserRouter>
     </ErrorBoundary>
   );
