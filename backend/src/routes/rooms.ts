@@ -100,7 +100,7 @@ router.get('/:slug', async (req: AuthRequest<{ slug: string }>, res: Response) =
       createdAt: room.createdAt.toISOString(),
       startedAt: room.startedAt?.toISOString(),
       endedAt: room.endedAt?.toISOString(),
-      participants: participants.map((p) => ({
+      participants: participants.map((p: typeof participants[number]) => ({
         id: p.id,
         odaId: p.roomId,
         odaSlug: room.slug,

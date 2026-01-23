@@ -24,7 +24,7 @@ export function Login() {
       api.setToken(response.token);
       setAuth(response.user, response.token);
       navigate('/');
-    } catch (err) {
+    } catch {
       // If login fails, try to register
       try {
         const response = await api.register(username.trim());

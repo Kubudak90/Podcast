@@ -14,6 +14,7 @@ interface ToastStore {
   removeToast: (id: string) => void;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const useToastStore = create<ToastStore>((set) => ({
   toasts: [],
   addToast: (toast) => {
@@ -30,6 +31,7 @@ export const useToastStore = create<ToastStore>((set) => ({
 }));
 
 // Helper functions
+// eslint-disable-next-line react-refresh/only-export-components
 export const toast = {
   success: (message: string, duration?: number) =>
     useToastStore.getState().addToast({ message, type: 'success', duration }),

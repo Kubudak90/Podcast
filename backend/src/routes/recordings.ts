@@ -26,7 +26,7 @@ router.get('/rooms/:slug/recordings', async (req: AuthRequest<{ slug: string }>,
     });
 
     res.json(
-      recordings.map((r) => ({
+      recordings.map((r: typeof recordings[number]) => ({
         id: r.id,
         roomId: r.roomId,
         fileUrl: r.fileUrl,
