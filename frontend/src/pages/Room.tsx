@@ -9,9 +9,9 @@ import {
   useConnectionState,
 } from '@livekit/components-react';
 import { Track, ConnectionState } from 'livekit-client';
-import type { Room as LKRoom } from 'livekit-client';
 import { Button, Avatar } from '../components/UI';
 import { toast } from '../components/Toast';
+import { Chat } from '../components/Chat';
 import { api } from '../lib/api';
 import { useAuthStore, useRoomStore } from '../lib/store';
 import { useSocket } from '../hooks/useSocket';
@@ -73,13 +73,13 @@ function ParticipantTile({ participant }: { participant: ReturnType<typeof usePa
 
 function RoomContent({ room }: { room: RoomType }) {
   const navigate = useNavigate();
-  const { user } = useAuthStore();
   const { isHost, isMuted, setIsMuted, reset } = useRoomStore();
   const participants = useParticipants();
   const { localParticipant } = useLocalParticipant();
   const connectionState = useConnectionState();
   const [isLive, setIsLive] = useState(room.status === 'live');
   const [micPermission, setMicPermission] = useState<boolean | null>(null);
+  const [isChatOpen, setIsChatOpen] = useState(false);
 
   // Socket event handlers for real-time updates
   const handleStatusChanged = useCallback((payload: { status: string; isRecording?: boolean }) => {
@@ -285,10 +285,28 @@ function RoomContent({ room }: { room: RoomType }) {
           <Button variant="ghost" size="lg" onClick={handleLeave}>
             Ayril
           </Button>
+
+          <Button
+            variant="secondary"
+            size="lg"
+            onClick={() => setIsChatOpen(true)}
+            className="rounded-full w-14 h-14"
+          >
+            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+              <path
+                fillRule="evenodd"
+                d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z"
+                clipRule="evenodd"
+              />
+            </svg>
+          </Button>
         </div>
       </div>
 
       <RoomAudioRenderer />
+
+      {/* Chat Panel */}
+      <Chat roomSlug={room.slug} isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} />
     </div>
   );
 }
@@ -296,7 +314,7 @@ function RoomContent({ room }: { room: RoomType }) {
 export function Room() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
-  const { isAuthenticated, user } = useAuthStore();
+  const { isAuthenticated } = useAuthStore();
   const { setCurrentRoom, setIsHost, setIsSpeaker } = useRoomStore();
 
   const [room, setRoom] = useState<RoomType | null>(null);
@@ -306,8 +324,8 @@ export function Room() {
   const [error, setError] = useState('');
 
   // Odaya baglandiginda mikrofonu otomatik ac
-  const handleConnected = useCallback((lkRoom: LKRoom) => {
-    lkRoom.localParticipant.setMicrophoneEnabled(true).catch(console.error);
+  const handleConnected = useCallback(() => {
+    // Mikrofon otomatik acilacak (audio={true} sayesinde)
   }, []);
 
   useEffect(() => {

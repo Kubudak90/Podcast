@@ -39,7 +39,9 @@ class ApiClient {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ message: 'An error occurred' }));
-      throw new Error(error.message || `HTTP error ${response.status}`);
+      const err = new Error(error.message || `HTTP error ${response.status}`) as Error & { requiresPassword?: boolean };
+      err.requiresPassword = error.requiresPassword;
+      throw err;
     }
 
     return response.json();
@@ -64,11 +66,18 @@ class ApiClient {
     return this.request<User>('/auth/me');
   }
 
+  async updateProfile(data: { username?: string; email?: string | null; bio?: string | null; avatarUrl?: string | null }): Promise<User> {
+    return this.request<User>('/auth/profile', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
   // Rooms
-  async createRoom(title: string, isPublic: boolean = true): Promise<Room> {
+  async createRoom(title: string, isPublic: boolean = true, password?: string): Promise<Room> {
     return this.request<Room>('/rooms', {
       method: 'POST',
-      body: JSON.stringify({ title, isPublic }),
+      body: JSON.stringify({ title, isPublic, password }),
     });
   }
 
@@ -76,8 +85,11 @@ class ApiClient {
     return this.request<Room>(`/rooms/${slug}`);
   }
 
-  async joinRoom(slug: string): Promise<{ room: Room; participant: { role: string } }> {
-    return this.request(`/rooms/${slug}/join`, { method: 'POST' });
+  async joinRoom(slug: string, password?: string): Promise<{ room: Room; participant: { role: string } }> {
+    return this.request(`/rooms/${slug}/join`, {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    });
   }
 
   async leaveRoom(slug: string): Promise<void> {

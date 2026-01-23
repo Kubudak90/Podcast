@@ -42,7 +42,7 @@ export function logError(error: Error, context?: Record<string, unknown>) {
 }
 
 // Auth logging helper
-export function logAuth(action: 'login' | 'register' | 'logout', userId: string, username: string, success: boolean) {
+export function logAuth(action: 'login' | 'register' | 'logout' | 'profile_update', userId: string, username: string, success: boolean) {
   logger.info({
     type: 'auth',
     action,

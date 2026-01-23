@@ -61,7 +61,7 @@ export function leaveRoomChannel(roomSlug: string): void {
 // Types for room updates
 export interface RoomUpdateEvent {
   type: 'status_changed' | 'participant_joined' | 'participant_left' | 'participant_role_changed' | 'recording_started' | 'recording_stopped';
-  payload: Record<string, unknown>;
+  payload: ParticipantJoinedPayload | ParticipantLeftPayload | StatusChangedPayload | RoleChangedPayload;
 }
 
 export interface ParticipantJoinedPayload {

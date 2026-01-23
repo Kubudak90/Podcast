@@ -8,25 +8,25 @@ const router = Router();
 router.use(authMiddleware);
 
 // GET /api/rooms/:slug/recordings - Get recordings for a room
-router.get('/rooms/:slug/recordings', async (req: AuthRequest, res: Response) => {
+router.get('/rooms/:slug/recordings', async (req: AuthRequest<{ slug: string }>, res: Response) => {
   try {
     const { slug } = req.params;
 
     const room = await prisma.room.findUnique({
       where: { slug },
-      include: {
-        recordings: {
-          orderBy: { createdAt: 'desc' },
-        },
-      },
     });
 
     if (!room) {
       return res.status(404).json({ message: 'Room not found' });
     }
 
+    const recordings = await prisma.recording.findMany({
+      where: { roomId: room.id },
+      orderBy: { createdAt: 'desc' },
+    });
+
     res.json(
-      room.recordings.map((r) => ({
+      recordings.map((r) => ({
         id: r.id,
         roomId: r.roomId,
         fileUrl: r.fileUrl,
@@ -43,7 +43,7 @@ router.get('/rooms/:slug/recordings', async (req: AuthRequest, res: Response) =>
 });
 
 // GET /api/recordings/:id/download - Get download URL for a recording
-router.get('/:id/download', async (req: AuthRequest, res: Response) => {
+router.get('/:id/download', async (req: AuthRequest<{ id: string }>, res: Response) => {
   try {
     const { id } = req.params;
 

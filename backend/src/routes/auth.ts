@@ -3,7 +3,7 @@ import { prisma } from '../lib/prisma.js';
 import { authMiddleware, generateToken, AuthRequest } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { authLimiter } from '../middleware/rateLimit.js';
-import { registerSchema, loginSchema } from '../lib/validation.js';
+import { registerSchema, loginSchema, updateProfileSchema } from '../lib/validation.js';
 import { logAuth, logError } from '../lib/logger.js';
 
 const router = Router();
@@ -40,6 +40,7 @@ router.post('/register', authLimiter, validate(registerSchema), async (req: Requ
         username: user.username,
         email: user.email,
         avatarUrl: user.avatarUrl,
+        bio: user.bio,
         createdAt: user.createdAt.toISOString(),
       },
       token,
@@ -73,6 +74,7 @@ router.post('/login', authLimiter, validate(loginSchema), async (req: Request, r
         username: user.username,
         email: user.email,
         avatarUrl: user.avatarUrl,
+        bio: user.bio,
         createdAt: user.createdAt.toISOString(),
       },
       token,
@@ -99,10 +101,71 @@ router.get('/me', authMiddleware, async (req: AuthRequest, res: Response) => {
       username: user.username,
       email: user.email,
       avatarUrl: user.avatarUrl,
+      bio: user.bio,
       createdAt: user.createdAt.toISOString(),
     });
   } catch (error) {
     logError(error as Error, { action: 'me', userId: req.userId });
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// PATCH /api/auth/profile - Update user profile
+router.patch('/profile', authMiddleware, validate(updateProfileSchema), async (req: AuthRequest, res: Response) => {
+  try {
+    const { username, email, bio, avatarUrl } = req.body;
+
+    // Check if username is taken by another user
+    if (username) {
+      const existingUser = await prisma.user.findFirst({
+        where: {
+          username,
+          NOT: { id: req.userId },
+        },
+      });
+
+      if (existingUser) {
+        return res.status(400).json({ message: 'Username already taken' });
+      }
+    }
+
+    // Check if email is taken by another user
+    if (email) {
+      const existingEmail = await prisma.user.findFirst({
+        where: {
+          email,
+          NOT: { id: req.userId },
+        },
+      });
+
+      if (existingEmail) {
+        return res.status(400).json({ message: 'Email already in use' });
+      }
+    }
+
+    const updateData: Record<string, string | null> = {};
+    if (username !== undefined) updateData.username = username;
+    if (email !== undefined) updateData.email = email;
+    if (bio !== undefined) updateData.bio = bio;
+    if (avatarUrl !== undefined) updateData.avatarUrl = avatarUrl;
+
+    const user = await prisma.user.update({
+      where: { id: req.userId },
+      data: updateData,
+    });
+
+    logAuth('profile_update', user.id, user.username, true);
+
+    res.json({
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      avatarUrl: user.avatarUrl,
+      bio: user.bio,
+      createdAt: user.createdAt.toISOString(),
+    });
+  } catch (error) {
+    logError(error as Error, { action: 'profile_update', userId: req.userId });
     res.status(500).json({ message: 'Internal server error' });
   }
 });

@@ -4,7 +4,7 @@ import { prisma } from '../lib/prisma.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { roomCreateLimiter } from '../middleware/rateLimit.js';
-import { createRoomSchema, changeRoleSchema } from '../lib/validation.js';
+import { createRoomSchema, changeRoleSchema, joinRoomSchema } from '../lib/validation.js';
 import { startRoomRecording, stopRoomRecording } from '../lib/livekit.js';
 import { emitParticipantJoined, emitParticipantLeft, emitRoomStatusChanged, emitParticipantRoleChanged } from '../lib/socket.js';
 import { logRoom, logRecording, logError } from '../lib/logger.js';
@@ -17,7 +17,7 @@ router.use(authMiddleware);
 // POST /api/rooms - Create room
 router.post('/', roomCreateLimiter, validate(createRoomSchema), async (req: AuthRequest, res: Response) => {
   try {
-    const { title, isPublic = true, maxSpeakers = 10 } = req.body;
+    const { title, isPublic = true, maxSpeakers = 10, password } = req.body;
 
     const slug = nanoid(8);
 
@@ -28,6 +28,7 @@ router.post('/', roomCreateLimiter, validate(createRoomSchema), async (req: Auth
         hostId: req.userId!,
         isPublic,
         maxSpeakers,
+        password: password || null,
       },
     });
 
@@ -48,6 +49,7 @@ router.post('/', roomCreateLimiter, validate(createRoomSchema), async (req: Auth
       status: room.status,
       maxSpeakers: room.maxSpeakers,
       isPublic: room.isPublic,
+      hasPassword: !!room.password,
       createdAt: room.createdAt.toISOString(),
       startedAt: room.startedAt?.toISOString(),
       endedAt: room.endedAt?.toISOString(),
@@ -59,44 +61,46 @@ router.post('/', roomCreateLimiter, validate(createRoomSchema), async (req: Auth
 });
 
 // GET /api/rooms/:slug - Get room details
-router.get('/:slug', async (req: AuthRequest, res: Response) => {
+router.get('/:slug', async (req: AuthRequest<{ slug: string }>, res: Response) => {
   try {
     const { slug } = req.params;
 
     const room = await prisma.room.findUnique({
       where: { slug },
-      include: {
-        host: {
-          select: { id: true, username: true, avatarUrl: true },
-        },
-        participants: {
-          where: { leftAt: null },
-          include: {
-            user: {
-              select: { id: true, username: true, avatarUrl: true },
-            },
-          },
-        },
-      },
     });
 
     if (!room) {
       return res.status(404).json({ message: 'Room not found' });
     }
 
+    const host = await prisma.user.findUnique({
+      where: { id: room.hostId },
+      select: { id: true, username: true, avatarUrl: true },
+    });
+
+    const participants = await prisma.roomParticipant.findMany({
+      where: { roomId: room.id, leftAt: null },
+      include: {
+        user: {
+          select: { id: true, username: true, avatarUrl: true },
+        },
+      },
+    });
+
     res.json({
       id: room.id,
       slug: room.slug,
       title: room.title,
       hostId: room.hostId,
-      host: room.host,
+      host,
       status: room.status,
       maxSpeakers: room.maxSpeakers,
       isPublic: room.isPublic,
+      hasPassword: !!room.password,
       createdAt: room.createdAt.toISOString(),
       startedAt: room.startedAt?.toISOString(),
       endedAt: room.endedAt?.toISOString(),
-      participants: room.participants.map((p) => ({
+      participants: participants.map((p) => ({
         id: p.id,
         odaId: p.roomId,
         odaSlug: room.slug,
@@ -114,9 +118,10 @@ router.get('/:slug', async (req: AuthRequest, res: Response) => {
 });
 
 // POST /api/rooms/:slug/join - Join room
-router.post('/:slug/join', async (req: AuthRequest, res: Response) => {
+router.post('/:slug/join', validate(joinRoomSchema), async (req: AuthRequest<{ slug: string }>, res: Response) => {
   try {
     const { slug } = req.params;
+    const { password } = req.body;
 
     const room = await prisma.room.findUnique({
       where: { slug },
@@ -128,6 +133,13 @@ router.post('/:slug/join', async (req: AuthRequest, res: Response) => {
 
     if (room.status === 'ended') {
       return res.status(400).json({ message: 'Room has ended' });
+    }
+
+    // Check password for private rooms (skip if host)
+    if (room.password && room.hostId !== req.userId) {
+      if (!password || password !== room.password) {
+        return res.status(403).json({ message: 'Invalid password', requiresPassword: true });
+      }
     }
 
     // Check if already a participant
@@ -218,7 +230,7 @@ router.post('/:slug/join', async (req: AuthRequest, res: Response) => {
 });
 
 // POST /api/rooms/:slug/leave - Leave room
-router.post('/:slug/leave', async (req: AuthRequest, res: Response) => {
+router.post('/:slug/leave', async (req: AuthRequest<{ slug: string }>, res: Response) => {
   try {
     const { slug } = req.params;
 
@@ -252,7 +264,7 @@ router.post('/:slug/leave', async (req: AuthRequest, res: Response) => {
 });
 
 // POST /api/rooms/:slug/start - Start room (host only)
-router.post('/:slug/start', async (req: AuthRequest, res: Response) => {
+router.post('/:slug/start', async (req: AuthRequest<{ slug: string }>, res: Response) => {
   try {
     const { slug } = req.params;
 
@@ -315,7 +327,7 @@ router.post('/:slug/start', async (req: AuthRequest, res: Response) => {
 });
 
 // POST /api/rooms/:slug/end - End room (host only)
-router.post('/:slug/end', async (req: AuthRequest, res: Response) => {
+router.post('/:slug/end', async (req: AuthRequest<{ slug: string }>, res: Response) => {
   try {
     const { slug } = req.params;
 
@@ -404,7 +416,7 @@ router.post('/:slug/end', async (req: AuthRequest, res: Response) => {
 });
 
 // PATCH /api/rooms/:slug/role - Change role
-router.patch('/:slug/role', validate(changeRoleSchema), async (req: AuthRequest, res: Response) => {
+router.patch('/:slug/role', validate(changeRoleSchema), async (req: AuthRequest<{ slug: string }>, res: Response) => {
   try {
     const { slug } = req.params;
     const { userId, role } = req.body;

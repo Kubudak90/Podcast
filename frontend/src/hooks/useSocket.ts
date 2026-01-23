@@ -5,6 +5,8 @@ import {
   joinRoomChannel,
   leaveRoomChannel,
   getSocket,
+} from '../lib/socket';
+import type {
   RoomUpdateEvent,
   ParticipantJoinedPayload,
   ParticipantLeftPayload,

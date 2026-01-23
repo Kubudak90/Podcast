@@ -1,13 +1,15 @@
 import { Request, Response, NextFunction } from 'express';
+import type { ParamsDictionary } from 'express-serve-static-core';
 import jwt from 'jsonwebtoken';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
-export interface AuthRequest extends Request {
+export interface AuthRequest<P = ParamsDictionary> extends Request<P> {
   userId?: string;
   user?: {
     id: string;
     username: string;
+    avatarUrl?: string | null;
   };
 }
 

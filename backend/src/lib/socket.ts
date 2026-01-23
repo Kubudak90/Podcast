@@ -2,6 +2,7 @@ import { Server as HttpServer } from 'http';
 import { Server, Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import { logger } from './logger.js';
+import { prisma } from './prisma.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
@@ -51,6 +52,44 @@ export function initializeSocket(httpServer: HttpServer): Server {
     socket.on('room:leave', (roomSlug: string) => {
       socket.leave(`room:${roomSlug}`);
       logger.debug({ username: socket.username, roomSlug }, 'User left room channel');
+    });
+
+    // Chat message
+    socket.on('chat:send', async (data: { roomSlug: string; content: string }) => {
+      if (!socket.userId || !socket.username) return;
+      if (!data.content || data.content.trim().length === 0) return;
+      if (data.content.length > 500) return; // Max 500 chars
+
+      try {
+        // Get room
+        const room = await prisma.room.findUnique({
+          where: { slug: data.roomSlug },
+        });
+
+        if (!room || room.status === 'ended') return;
+
+        // Save message to database
+        const message = await prisma.chatMessage.create({
+          data: {
+            roomId: room.id,
+            userId: socket.userId,
+            content: data.content.trim(),
+          },
+        });
+
+        // Broadcast to room
+        io?.to(`room:${data.roomSlug}`).emit('chat:message', {
+          id: message.id,
+          userId: socket.userId,
+          username: socket.username,
+          content: message.content,
+          createdAt: message.createdAt.toISOString(),
+        });
+
+        logger.debug({ username: socket.username, roomSlug: data.roomSlug }, 'Chat message sent');
+      } catch (error) {
+        logger.error({ error, userId: socket.userId }, 'Failed to send chat message');
+      }
     });
 
     socket.on('disconnect', () => {

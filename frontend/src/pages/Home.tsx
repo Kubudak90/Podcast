@@ -13,9 +13,12 @@ export function Home() {
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [roomTitle, setRoomTitle] = useState('');
   const [roomSlug, setRoomSlug] = useState('');
+  const [roomPassword, setRoomPassword] = useState('');
+  const [joinPassword, setJoinPassword] = useState('');
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [requiresPassword, setRequiresPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [micPermission, setMicPermission] = useState<'granted' | 'denied' | 'prompt' | null>(null);
 
   // Mikrofon izni kontrolu ve istegi
   const requestMicPermission = useCallback(async (): Promise<boolean> => {
@@ -23,7 +26,6 @@ export function Home() {
       // Mevcut izin durumunu kontrol et
       if (navigator.permissions) {
         const result = await navigator.permissions.query({ name: 'microphone' as PermissionName });
-        setMicPermission(result.state as 'granted' | 'denied' | 'prompt');
 
         if (result.state === 'granted') {
           return true;
@@ -34,11 +36,9 @@ export function Home() {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       // Stream'i kapat (sadece izin almak icin kullandik)
       stream.getTracks().forEach(track => track.stop());
-      setMicPermission('granted');
       return true;
     } catch (err) {
       console.error('Mikrofon izni alinamadi:', err);
-      setMicPermission('denied');
       setError('Mikrofon izni gerekli. Lutfen tarayici ayarlarindan mikrofon iznini verin.');
       return false;
     }
@@ -59,7 +59,7 @@ export function Home() {
         return;
       }
 
-      const room = await api.createRoom(roomTitle.trim());
+      const room = await api.createRoom(roomTitle.trim(), !isPrivate, isPrivate ? roomPassword : undefined);
       setCurrentRoom(room);
       setIsHost(true);
       navigate(`/room/${room.slug}`);
@@ -86,12 +86,18 @@ export function Home() {
       }
 
       const slug = roomSlug.trim().replace(/.*\/room\//, '');
-      const { room, participant } = await api.joinRoom(slug);
+      const { room, participant } = await api.joinRoom(slug, joinPassword || undefined);
       setCurrentRoom(room);
       setIsHost(participant.role === 'host');
       navigate(`/room/${slug}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Odaya katilamadi');
+    } catch (err: unknown) {
+      const error = err as { message?: string; requiresPassword?: boolean };
+      if (error.requiresPassword) {
+        setRequiresPassword(true);
+        setError('Bu oda sifre ile korunuyor');
+      } else {
+        setError(error.message || 'Odaya katilamadi');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -171,6 +177,8 @@ export function Home() {
         onClose={() => {
           setShowCreateModal(false);
           setRoomTitle('');
+          setRoomPassword('');
+          setIsPrivate(false);
           setError('');
         }}
         title="Yeni Oda Olustur"
@@ -189,6 +197,37 @@ export function Home() {
               autoFocus
             />
           </div>
+
+          <div className="flex items-center gap-3">
+            <input
+              type="checkbox"
+              id="isPrivate"
+              checked={isPrivate}
+              onChange={(e) => setIsPrivate(e.target.checked)}
+              className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-indigo-600 focus:ring-indigo-500"
+            />
+            <label htmlFor="isPrivate" className="text-sm">
+              Ozel oda (sifre ile korunan)
+            </label>
+          </div>
+
+          {isPrivate && (
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Oda Sifresi
+              </label>
+              <input
+                type="password"
+                value={roomPassword}
+                onChange={(e) => setRoomPassword(e.target.value)}
+                placeholder="En az 4 karakter"
+                className="input"
+                minLength={4}
+                required={isPrivate}
+              />
+            </div>
+          )}
+
           {error && <p className="text-red-400 text-sm">{error}</p>}
           <Button type="submit" className="w-full" isLoading={isLoading}>
             Olustur
@@ -202,6 +241,8 @@ export function Home() {
         onClose={() => {
           setShowJoinModal(false);
           setRoomSlug('');
+          setJoinPassword('');
+          setRequiresPassword(false);
           setError('');
         }}
         title="Odaya Katil"
@@ -220,6 +261,23 @@ export function Home() {
               autoFocus
             />
           </div>
+
+          {requiresPassword && (
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Oda Sifresi
+              </label>
+              <input
+                type="password"
+                value={joinPassword}
+                onChange={(e) => setJoinPassword(e.target.value)}
+                placeholder="Sifre girin"
+                className="input"
+                required
+              />
+            </div>
+          )}
+
           {error && <p className="text-red-400 text-sm">{error}</p>}
           <Button type="submit" className="w-full" isLoading={isLoading}>
             Katil

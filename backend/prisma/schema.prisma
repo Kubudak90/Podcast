@@ -14,11 +14,13 @@ model User {
   username  String   @unique
   email     String?  @unique
   avatarUrl String?
+  bio       String?
   createdAt DateTime @default(now())
 
   // Relations
   hostedRooms  Room[]            @relation("HostedRooms")
   participants RoomParticipant[]
+  messages     ChatMessage[]
 
   @@map("users")
 }
@@ -31,6 +33,7 @@ model Room {
   status      String    @default("waiting") // waiting, live, ended
   maxSpeakers Int       @default(10)
   isPublic    Boolean   @default(true)
+  password    String?   // For private rooms
   egressId    String?   // LiveKit egress ID for recording
   createdAt   DateTime  @default(now())
   startedAt   DateTime?
@@ -40,6 +43,7 @@ model Room {
   host         User              @relation("HostedRooms", fields: [hostId], references: [id])
   participants RoomParticipant[]
   recordings   Recording[]
+  messages     ChatMessage[]
 
   @@map("rooms")
 }
@@ -73,4 +77,18 @@ model Recording {
   room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
 
   @@map("recordings")
+}
+
+model ChatMessage {
+  id        String   @id @default(uuid())
+  roomId    String
+  userId    String
+  content   String
+  createdAt DateTime @default(now())
+
+  // Relations
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("chat_messages")
 }
