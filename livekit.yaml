@@ -10,8 +10,8 @@ redis:
   address: redis:6379
 
 keys:
-  # API Key : Secret - Bunlari degistir!
-  APIzxcvbnm123: secretkey123456789abcdef
+  # API Key : Secret - .env dosyasindan okunur
+  ${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}
 
 logging:
   level: info

@@ -1,6 +1,6 @@
 # Egress Worker Configuration
-api_key: APIzxcvbnm123
-api_secret: secretkey123456789abcdef
+api_key: ${LIVEKIT_API_KEY}
+api_secret: ${LIVEKIT_API_SECRET}
 ws_url: ws://livekit:7880
 
 redis:

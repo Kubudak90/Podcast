@@ -1,21 +1,106 @@
 import { Router, Response } from 'express';
 import { nanoid } from 'nanoid';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
+import { validate } from '../middleware/validate.js';
+import { roomCreateLimiter } from '../middleware/rateLimit.js';
+import { createRoomSchema, changeRoleSchema, joinRoomSchema } from '../lib/validation.js';
+import { startRoomRecording, stopRoomRecording } from '../lib/livekit.js';
+import { emitParticipantJoined, emitParticipantLeft, emitRoomStatusChanged, emitParticipantRoleChanged } from '../lib/socket.js';
+import { logRoom, logRecording, logError } from '../lib/logger.js';
+import { notifyFollowersOfLive } from '../lib/push.js';
 
 const router = Router();
 
 // Apply auth middleware to all routes
 router.use(authMiddleware);
 
-// POST /api/rooms - Create room
-router.post('/', async (req: AuthRequest, res: Response) => {
+// GET /api/rooms - List public rooms
+router.get('/', async (req: AuthRequest, res: Response) => {
   try {
-    const { title, isPublic = true } = req.body;
+    const limit = Math.min(Number(req.query.limit) || 20, 50);
+    const offset = Number(req.query.offset) || 0;
+    const search = req.query.search as string | undefined;
+    const status = req.query.status as string | undefined; // 'live', 'waiting', or undefined for both
 
-    if (!title || title.length < 1 || title.length > 100) {
-      return res.status(400).json({ message: 'Title must be between 1 and 100 characters' });
+    // Build where clause
+    const where: {
+      isPublic: boolean;
+      status: { in: string[] } | string;
+      title?: { contains: string; mode: 'insensitive' };
+    } = {
+      isPublic: true,
+      status: status && ['live', 'waiting'].includes(status)
+        ? status
+        : { in: ['live', 'waiting'] },
+    };
+
+    // Add search filter
+    if (search && search.trim()) {
+      where.title = {
+        contains: search.trim(),
+        mode: 'insensitive',
+      };
     }
+
+    // Use _count with where clause to avoid N+1 query problem
+    const [rooms, totalCount] = await Promise.all([
+      prisma.room.findMany({
+        where,
+        include: {
+          host: {
+            select: { id: true, username: true, avatarUrl: true },
+          },
+          _count: {
+            select: {
+              participants: {
+                where: { leftAt: null }, // Only count active participants
+              },
+            },
+          },
+        },
+        orderBy: [
+          { status: 'asc' }, // 'live' before 'waiting'
+          { createdAt: 'desc' },
+        ],
+        take: limit,
+        skip: offset,
+      }),
+      prisma.room.count({ where }),
+    ]);
+
+    // Map rooms to response format (no additional queries needed)
+    const roomsWithActiveCount = rooms.map((room: typeof rooms[number]) => ({
+      id: room.id,
+      slug: room.slug,
+      title: room.title,
+      status: room.status,
+      isPublic: room.isPublic,
+      hasPassword: !!room.password,
+      host: room.host,
+      participantCount: room._count.participants,
+      maxSpeakers: room.maxSpeakers,
+      createdAt: room.createdAt.toISOString(),
+      startedAt: room.startedAt?.toISOString() || null,
+    }));
+
+    res.json({
+      rooms: roomsWithActiveCount,
+      total: totalCount,
+      limit,
+      offset,
+    });
+  } catch (error) {
+    logError(error as Error, { action: 'list_public_rooms' });
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// POST /api/rooms - Create room
+router.post('/', roomCreateLimiter, validate(createRoomSchema), async (req: AuthRequest, res: Response) => {
+  try {
+    const { title, isPublic = true, maxSpeakers = 10, password } = req.body;
 
     const slug = nanoid(8);
 
@@ -25,6 +110,8 @@ router.post('/', async (req: AuthRequest, res: Response) => {
         title,
         hostId: req.userId!,
         isPublic,
+        maxSpeakers,
+        password: password || null,
       },
     });
 
@@ -45,58 +132,61 @@ router.post('/', async (req: AuthRequest, res: Response) => {
       status: room.status,
       maxSpeakers: room.maxSpeakers,
       isPublic: room.isPublic,
+      hasPassword: !!room.password,
       createdAt: room.createdAt.toISOString(),
       startedAt: room.startedAt?.toISOString(),
       endedAt: room.endedAt?.toISOString(),
     });
   } catch (error) {
-    console.error('Create room error:', error);
+    logError(error as Error, { action: 'create_room', userId: req.userId });
     res.status(500).json({ message: 'Internal server error' });
   }
 });
 
 // GET /api/rooms/:slug - Get room details
-router.get('/:slug', async (req: AuthRequest, res: Response) => {
+router.get('/:slug', async (req: AuthRequest<{ slug: string }>, res: Response) => {
   try {
     const { slug } = req.params;
 
     const room = await prisma.room.findUnique({
       where: { slug },
-      include: {
-        host: {
-          select: { id: true, username: true, avatarUrl: true },
-        },
-        participants: {
-          where: { leftAt: null },
-          include: {
-            user: {
-              select: { id: true, username: true, avatarUrl: true },
-            },
-          },
-        },
-      },
     });
 
     if (!room) {
       return res.status(404).json({ message: 'Room not found' });
     }
 
+    const host = await prisma.user.findUnique({
+      where: { id: room.hostId },
+      select: { id: true, username: true, avatarUrl: true },
+    });
+
+    const participants = await prisma.roomParticipant.findMany({
+      where: { roomId: room.id, leftAt: null },
+      include: {
+        user: {
+          select: { id: true, username: true, avatarUrl: true },
+        },
+      },
+    });
+
     res.json({
       id: room.id,
       slug: room.slug,
       title: room.title,
       hostId: room.hostId,
-      host: room.host,
+      host,
       status: room.status,
       maxSpeakers: room.maxSpeakers,
       isPublic: room.isPublic,
+      hasPassword: !!room.password,
       createdAt: room.createdAt.toISOString(),
       startedAt: room.startedAt?.toISOString(),
       endedAt: room.endedAt?.toISOString(),
-      participants: room.participants.map((p) => ({
+      participants: participants.map((p: typeof participants[number]) => ({
         id: p.id,
-        odaId: p.roomId,
-        odaSlug: room.slug,
+        roomId: p.roomId,
+        roomSlug: room.slug,
         userId: p.userId,
         username: p.user.username,
         avatarUrl: p.user.avatarUrl,
@@ -105,15 +195,16 @@ router.get('/:slug', async (req: AuthRequest, res: Response) => {
       })),
     });
   } catch (error) {
-    console.error('Get room error:', error);
+    logError(error as Error, { action: 'get_room' });
     res.status(500).json({ message: 'Internal server error' });
   }
 });
 
 // POST /api/rooms/:slug/join - Join room
-router.post('/:slug/join', async (req: AuthRequest, res: Response) => {
+router.post('/:slug/join', validate(joinRoomSchema), async (req: AuthRequest<{ slug: string }>, res: Response) => {
   try {
     const { slug } = req.params;
+    const { password } = req.body;
 
     const room = await prisma.room.findUnique({
       where: { slug },
@@ -125,6 +216,13 @@ router.post('/:slug/join', async (req: AuthRequest, res: Response) => {
 
     if (room.status === 'ended') {
       return res.status(400).json({ message: 'Room has ended' });
+    }
+
+    // Check password for private rooms (skip if host)
+    if (room.password && room.hostId !== req.userId) {
+      if (!password || password !== room.password) {
+        return res.status(403).json({ message: 'Invalid password', requiresPassword: true });
+      }
     }
 
     // Check if already a participant
@@ -157,31 +255,44 @@ router.post('/:slug/join', async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // Count current speakers
-    const speakerCount = await prisma.roomParticipant.count({
-      where: {
-        roomId: room.id,
-        role: { in: ['host', 'speaker'] },
-        leftAt: null,
-      },
-    });
+    // Use transaction to prevent race condition when counting speakers
+    const participant = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      // Count current speakers
+      const speakerCount = await tx.roomParticipant.count({
+        where: {
+          roomId: room.id,
+          role: { in: ['host', 'speaker'] },
+          leftAt: null,
+        },
+      });
 
-    // Determine role
-    const role = speakerCount < room.maxSpeakers ? 'speaker' : 'listener';
+      // Determine role
+      const role = speakerCount < room.maxSpeakers ? 'speaker' : 'listener';
 
-    // Create or update participant
-    const participant = existingParticipant
-      ? await prisma.roomParticipant.update({
+      // Create or update participant
+      if (existingParticipant) {
+        return tx.roomParticipant.update({
           where: { id: existingParticipant.id },
           data: { leftAt: null, role },
-        })
-      : await prisma.roomParticipant.create({
+        });
+      } else {
+        return tx.roomParticipant.create({
           data: {
             roomId: room.id,
             userId: req.userId!,
             role,
           },
         });
+      }
+    });
+
+    // Emit socket event for new participant
+    emitParticipantJoined(room.slug, {
+      userId: req.userId!,
+      username: req.user!.username,
+      role: participant.role,
+      avatarUrl: req.user!.avatarUrl,
+    });
 
     res.json({
       room: {
@@ -201,13 +312,13 @@ router.post('/:slug/join', async (req: AuthRequest, res: Response) => {
       },
     });
   } catch (error) {
-    console.error('Join room error:', error);
+    logError(error as Error, { action: 'join_room', userId: req.userId });
     res.status(500).json({ message: 'Internal server error' });
   }
 });
 
 // POST /api/rooms/:slug/leave - Leave room
-router.post('/:slug/leave', async (req: AuthRequest, res: Response) => {
+router.post('/:slug/leave', async (req: AuthRequest<{ slug: string }>, res: Response) => {
   try {
     const { slug } = req.params;
 
@@ -230,15 +341,18 @@ router.post('/:slug/leave', async (req: AuthRequest, res: Response) => {
       },
     });
 
+    // Emit socket event for participant leaving
+    emitParticipantLeft(room.slug, req.userId!);
+
     res.json({ message: 'Left room successfully' });
   } catch (error) {
-    console.error('Leave room error:', error);
+    logError(error as Error, { action: 'leave_room', userId: req.userId });
     res.status(500).json({ message: 'Internal server error' });
   }
 });
 
 // POST /api/rooms/:slug/start - Start room (host only)
-router.post('/:slug/start', async (req: AuthRequest, res: Response) => {
+router.post('/:slug/start', async (req: AuthRequest<{ slug: string }>, res: Response) => {
   try {
     const { slug } = req.params;
 
@@ -258,12 +372,36 @@ router.post('/:slug/start', async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ message: 'Room is not in waiting state' });
     }
 
+    // Create timestamp for consistent filepath
+    const startedAt = new Date();
+    const timestamp = startedAt.getTime();
+
+    // Start recording via LiveKit Egress
+    let egressId: string | null = null;
+    try {
+      const result = await startRoomRecording(room.slug, timestamp);
+      egressId = result.egressId;
+      logRecording('start', room.slug, egressId);
+    } catch (egressError) {
+      logRecording('error', room.slug, undefined, (egressError as Error).message);
+      // Continue without recording - don't block the room start
+    }
+
     const updatedRoom = await prisma.room.update({
       where: { id: room.id },
       data: {
         status: 'live',
-        startedAt: new Date(),
+        startedAt,
+        egressId,
       },
+    });
+
+    // Emit socket event for room status change
+    emitRoomStatusChanged(room.slug, 'live', !!egressId);
+
+    // Notify followers that host is live (fire and forget)
+    notifyFollowersOfLive(req.userId!, req.user!.username, room.title, room.slug).catch((error) => {
+      logError(error as Error, { action: 'notify_followers_live', userId: req.userId, roomSlug: room.slug });
     });
 
     res.json({
@@ -274,18 +412,19 @@ router.post('/:slug/start', async (req: AuthRequest, res: Response) => {
       status: updatedRoom.status,
       maxSpeakers: updatedRoom.maxSpeakers,
       isPublic: updatedRoom.isPublic,
+      isRecording: !!egressId,
       createdAt: updatedRoom.createdAt.toISOString(),
       startedAt: updatedRoom.startedAt?.toISOString(),
       endedAt: updatedRoom.endedAt?.toISOString(),
     });
   } catch (error) {
-    console.error('Start room error:', error);
+    logError(error as Error, { action: 'start_room', userId: req.userId });
     res.status(500).json({ message: 'Internal server error' });
   }
 });
 
 // POST /api/rooms/:slug/end - End room (host only)
-router.post('/:slug/end', async (req: AuthRequest, res: Response) => {
+router.post('/:slug/end', async (req: AuthRequest<{ slug: string }>, res: Response) => {
   try {
     const { slug } = req.params;
 
@@ -305,16 +444,51 @@ router.post('/:slug/end', async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ message: 'Room has already ended' });
     }
 
-    // End room and mark all participants as left
-    const [updatedRoom] = await prisma.$transaction([
-      prisma.room.update({
+    // Stop recording if active and prepare recording data
+    let recordingData: { roomId: string; fileUrl: string; durationSeconds: number | null; format: string } | null = null;
+    if (room.egressId) {
+      try {
+        await stopRoomRecording(room.egressId);
+        logRecording('stop', room.slug, room.egressId);
+
+        // Calculate duration
+        const durationSeconds = room.startedAt
+          ? Math.floor((Date.now() - room.startedAt.getTime()) / 1000)
+          : null;
+
+        recordingData = {
+          roomId: room.id,
+          fileUrl: `recordings/${room.slug}-${room.startedAt?.getTime()}.mp3`,
+          durationSeconds,
+          format: 'mp3',
+        };
+      } catch (egressError) {
+        logRecording('error', room.slug, room.egressId, (egressError as Error).message);
+        // Continue ending the room even if recording stop fails
+      }
+    }
+
+    // End room, mark all participants as left, and create recording - all in a transaction
+    const updatedRoom = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      // Create recording entry if we have recording data
+      if (recordingData) {
+        await tx.recording.create({
+          data: recordingData,
+        });
+      }
+
+      // Update room status
+      const updated = await tx.room.update({
         where: { id: room.id },
         data: {
           status: 'ended',
           endedAt: new Date(),
+          egressId: null, // Clear egress ID
         },
-      }),
-      prisma.roomParticipant.updateMany({
+      });
+
+      // Mark all participants as left
+      await tx.roomParticipant.updateMany({
         where: {
           roomId: room.id,
           leftAt: null,
@@ -322,8 +496,13 @@ router.post('/:slug/end', async (req: AuthRequest, res: Response) => {
         data: {
           leftAt: new Date(),
         },
-      }),
-    ]);
+      });
+
+      return updated;
+    });
+
+    // Emit socket event for room ended
+    emitRoomStatusChanged(room.slug, 'ended');
 
     res.json({
       id: updatedRoom.id,
@@ -338,20 +517,16 @@ router.post('/:slug/end', async (req: AuthRequest, res: Response) => {
       endedAt: updatedRoom.endedAt?.toISOString(),
     });
   } catch (error) {
-    console.error('End room error:', error);
+    logError(error as Error, { action: 'end_room', userId: req.userId });
     res.status(500).json({ message: 'Internal server error' });
   }
 });
 
 // PATCH /api/rooms/:slug/role - Change role
-router.patch('/:slug/role', async (req: AuthRequest, res: Response) => {
+router.patch('/:slug/role', validate(changeRoleSchema), async (req: AuthRequest<{ slug: string }>, res: Response) => {
   try {
     const { slug } = req.params;
     const { userId, role } = req.body;
-
-    if (!['speaker', 'listener'].includes(role)) {
-      return res.status(400).json({ message: 'Invalid role' });
-    }
 
     const room = await prisma.room.findUnique({
       where: { slug },
@@ -374,9 +549,12 @@ router.patch('/:slug/role', async (req: AuthRequest, res: Response) => {
       data: { role },
     });
 
+    // Emit socket event for role change
+    emitParticipantRoleChanged(room.slug, userId as string, role as string);
+
     res.json({ message: 'Role updated successfully' });
   } catch (error) {
-    console.error('Change role error:', error);
+    logError(error as Error, { action: 'change_role', userId: req.userId });
     res.status(500).json({ message: 'Internal server error' });
   }
 });

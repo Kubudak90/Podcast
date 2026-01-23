@@ -24,7 +24,7 @@ export function Login() {
       api.setToken(response.token);
       setAuth(response.user, response.token);
       navigate('/');
-    } catch (err) {
+    } catch {
       // If login fails, try to register
       try {
         const response = await api.register(username.trim());
@@ -40,7 +40,7 @@ export function Login() {
   };
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4">
+    <div className="min-h-screen-safe flex items-center justify-center p-4 safe-area-pb">
       <div className="card w-full max-w-md">
         <div className="text-center mb-6">
           <h1 className="text-2xl font-bold mb-2">Hos Geldin</h1>

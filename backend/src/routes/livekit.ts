@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { createLiveKitToken, getLiveKitUrl } from '../lib/livekit.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
+import { logError } from '../lib/logger.js';
 
 const router = Router();
 
@@ -42,14 +43,14 @@ router.post('/token', async (req: AuthRequest, res: Response) => {
     const canPublish = participant.role === 'host' || participant.role === 'speaker';
 
     // Create token
-    const token = createLiveKitToken(room.slug, req.user!.username, canPublish);
+    const token = await createLiveKitToken(room.slug, req.user!.username, canPublish);
 
     res.json({
       token,
       url: getLiveKitUrl(),
     });
   } catch (error) {
-    console.error('Get LiveKit token error:', error);
+    logError(error as Error, { action: 'get_livekit_token' });
     res.status(500).json({ message: 'Internal server error' });
   }
 });

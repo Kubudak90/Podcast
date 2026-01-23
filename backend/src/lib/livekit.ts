@@ -4,11 +4,11 @@ const LIVEKIT_URL = process.env.LIVEKIT_URL || '';
 const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || '';
 const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || '';
 
-export function createLiveKitToken(
+export async function createLiveKitToken(
   roomName: string,
   participantIdentity: string,
   canPublish: boolean = true
-): string {
+): Promise<string> {
   const token = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
     identity: participantIdentity,
     ttl: '24h',
@@ -22,7 +22,7 @@ export function createLiveKitToken(
     canPublishData: true,
   });
 
-  return token.toJwt();
+  return await token.toJwt();
 }
 
 export function getLiveKitUrl(): string {
@@ -39,17 +39,18 @@ function getEgressClient(): EgressClient {
   return egressClient;
 }
 
-export async function startRoomRecording(roomName: string): Promise<{ egressId: string }> {
+export async function startRoomRecording(roomName: string, timestamp: number): Promise<{ egressId: string; filepath: string }> {
   const client = getEgressClient();
 
+  const filepath = `recordings/${roomName}-${timestamp}.mp3`;
   const output = new EncodedFileOutput({
-    filepath: `recordings/${roomName}-${Date.now()}.mp3`,
+    filepath,
     fileType: EncodedFileType.MP3,
   });
 
   const egress = await client.startRoomCompositeEgress(roomName, { file: output });
 
-  return { egressId: egress.egressId };
+  return { egressId: egress.egressId, filepath };
 }
 
 export async function stopRoomRecording(egressId: string): Promise<void> {

@@ -1,13 +1,29 @@
 import { Request, Response, NextFunction } from 'express';
+import type { ParamsDictionary, Query } from 'express-serve-static-core';
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+function getJwtSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error('JWT_SECRET environment variable is required');
+  }
+  return secret;
+}
 
-export interface AuthRequest extends Request {
+const JWT_SECRET = getJwtSecret();
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export interface AuthRequest<
+  P = ParamsDictionary,
+  ResBody = unknown,
+  ReqBody = Record<string, any>,
+  ReqQuery = Query
+> extends Request<P, ResBody, ReqBody, ReqQuery> {
   userId?: string;
   user?: {
     id: string;
     username: string;
+    avatarUrl?: string | null;
   };
 }
 
@@ -32,4 +48,24 @@ export function authMiddleware(req: AuthRequest, res: Response, next: NextFuncti
 
 export function generateToken(userId: string, username: string): string {
   return jwt.sign({ userId, username }, JWT_SECRET, { expiresIn: '30d' });
+}
+
+export function optionalAuthMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return next();
+  }
+
+  const token = authHeader.split(' ')[1];
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string; username: string };
+    req.userId = decoded.userId;
+    req.user = { id: decoded.userId, username: decoded.username };
+  } catch {
+    // Invalid token, but continue without auth
+  }
+
+  next();
 }

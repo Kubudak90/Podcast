@@ -1,6 +1,8 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Header } from './components/Layout';
-import { Home, Login, Room, RoomEnded, Profile } from './pages';
+import { Home, Login, Room, RoomEnded, Profile, Listen } from './pages';
+import ErrorBoundary from './components/ErrorBoundary';
+import { ToastContainer } from './components/Toast';
 import { useEffect } from 'react';
 import { api } from './lib/api';
 import { useAuthStore } from './lib/store';
@@ -16,26 +18,31 @@ function App() {
       api.me().then(user => {
         setAuth(user, token);
       }).catch(() => {
+        api.setToken(null);
         logout();
       });
     }
-  }, []);
+  }, [token, setAuth, logout]);
 
   return (
-    <BrowserRouter>
-      <div className="min-h-screen bg-slate-900">
-        <Header />
-        <main>
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/room/:slug" element={<Room />} />
-            <Route path="/room/:slug/ended" element={<RoomEnded />} />
-            <Route path="/profile" element={<Profile />} />
-          </Routes>
-        </main>
-      </div>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <div className="min-h-screen bg-slate-900">
+          <Header />
+          <main>
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/room/:slug" element={<Room />} />
+              <Route path="/room/:slug/ended" element={<RoomEnded />} />
+              <Route path="/profile" element={<Profile />} />
+              <Route path="/listen/:shareSlug" element={<Listen />} />
+            </Routes>
+          </main>
+        </div>
+        <ToastContainer />
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 }
 

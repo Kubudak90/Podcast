@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   LiveKitRoom,
@@ -6,35 +6,91 @@ import {
   useParticipants,
   useLocalParticipant,
   useTracks,
+  useConnectionState,
 } from '@livekit/components-react';
-import { Track, RoomEvent } from 'livekit-client';
-import type { Room as LKRoom } from 'livekit-client';
-import { Button, Avatar } from '../components/UI';
+import { Track, ConnectionState } from 'livekit-client';
+import { Button, Avatar, VolumeSlider, AudioLevelMeter } from '../components/UI';
+import { toast } from '../components/Toast';
+import { Chat } from '../components/Chat';
 import { api } from '../lib/api';
-import { useAuthStore, useRoomStore } from '../lib/store';
+import { useAuthStore, useRoomStore, useAudioSettingsStore } from '../lib/store';
+import { useSocket } from '../hooks/useSocket';
 import type { Room as RoomType } from '../types';
 
-function ParticipantTile({ participant }: { participant: ReturnType<typeof useParticipants>[0] }) {
+// Mikrofon izni kontrolu
+async function checkMicrophonePermission(): Promise<boolean> {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream.getTracks().forEach(track => track.stop());
+    return true;
+  } catch (err) {
+    console.error('Mikrofon izni alinamadi:', err);
+    return false;
+  }
+}
+
+function ParticipantTile({
+  participant,
+  isLocal = false,
+  onVolumeChange
+}: {
+  participant: ReturnType<typeof useParticipants>[0];
+  isLocal?: boolean;
+  onVolumeChange?: (volume: number) => void;
+}) {
   const tracks = useTracks([Track.Source.Microphone], {
     onlySubscribed: true,
   });
+  const { participantVolumes, setParticipantVolume } = useAudioSettingsStore();
+  const [showVolumeControl, setShowVolumeControl] = useState(false);
+  const [audioLevel, setAudioLevel] = useState(0);
+  const audioLevelRef = useRef<number>(0);
 
-  const isSpeaking = tracks.some(
-    (t) => t.participant.identity === participant.identity && t.participant.isSpeaking
+  // Get participant's audio track
+  const participantTrack = tracks.find(
+    (t) => t.participant.identity === participant.identity
   );
 
+  const isSpeaking = participantTrack?.participant.isSpeaking ?? false;
   const isMuted = !participant.isMicrophoneEnabled;
 
+  // Track audio level with smoothing
+  useEffect(() => {
+    if (!participantTrack?.participant) return;
+
+    const updateAudioLevel = () => {
+      const level = participantTrack.participant.audioLevel ?? 0;
+      // Smooth the audio level for better visual effect
+      audioLevelRef.current = audioLevelRef.current * 0.7 + level * 0.3;
+      setAudioLevel(audioLevelRef.current);
+    };
+
+    const interval = setInterval(updateAudioLevel, 50);
+    return () => clearInterval(interval);
+  }, [participantTrack]);
+
+  const volume = participantVolumes[participant.identity] ?? 1;
+
+  const handleVolumeChange = (newVolume: number) => {
+    setParticipantVolume(participant.identity, newVolume);
+    onVolumeChange?.(newVolume);
+  };
+
   return (
-    <div className="flex flex-col items-center gap-2 p-4 bg-slate-800 rounded-xl">
+    <div
+      className="flex flex-col items-center gap-2 p-4 bg-slate-800 rounded-xl relative group cursor-pointer"
+      onClick={() => !isLocal && setShowVolumeControl(!showVolumeControl)}
+    >
       <div className="relative">
         <Avatar
           name={participant.identity}
           size="lg"
           isSpeaking={isSpeaking}
+          audioLevel={audioLevel}
+          showAudioLevel={isSpeaking && !isMuted}
         />
         {isMuted && (
-          <div className="absolute -bottom-1 -right-1 bg-red-500 rounded-full p-1">
+          <div className="absolute -bottom-1 -right-1 bg-red-500 rounded-full p-1 z-20">
             <svg
               className="w-3 h-3 text-white"
               fill="currentColor"
@@ -42,27 +98,77 @@ function ParticipantTile({ participant }: { participant: ReturnType<typeof usePa
             >
               <path
                 fillRule="evenodd"
-                d="M5.05 3.636a1 1 0 010 1.414L3.414 6.686l1.636 1.636a1 1 0 01-1.414 1.414L2 8.1l-1.636 1.636a1 1 0 01-1.414-1.414L.586 6.686.95 6.322a1 1 0 011.414 0L4 7.958l1.05-1.05a1 1 0 011.414 0l1.05 1.05 1.636-1.636a1 1 0 011.414 1.414L8.928 9.372l1.636 1.636a1 1 0 01-1.414 1.414L7.514 10.786 5.878 12.422a1 1 0 01-1.414-1.414L6.1 9.372 4.464 7.736a1 1 0 010-1.414L5.05 5.736l.586-.586a1 1 0 011.414 0z"
+                d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM12.293 7.293a1 1 0 011.414 0L15 8.586l1.293-1.293a1 1 0 111.414 1.414L16.414 10l1.293 1.293a1 1 0 01-1.414 1.414L15 11.414l-1.293 1.293a1 1 0 01-1.414-1.414L13.586 10l-1.293-1.293a1 1 0 010-1.414z"
                 clipRule="evenodd"
               />
             </svg>
           </div>
         )}
       </div>
+
+      {/* Audio level meter */}
+      {!isMuted && (
+        <AudioLevelMeter level={audioLevel} size="sm" barCount={5} />
+      )}
+
       <span className="text-sm font-medium truncate max-w-[100px]">
         {participant.identity}
+        {isLocal && <span className="text-slate-400 text-xs ml-1">(Sen)</span>}
       </span>
+
+      {/* Volume control popup for remote participants */}
+      {!isLocal && showVolumeControl && (
+        <div
+          className="absolute top-full mt-2 bg-slate-700 rounded-lg p-3 shadow-lg z-30"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center gap-2 min-w-[140px]">
+            <VolumeSlider
+              value={volume}
+              onChange={handleVolumeChange}
+              size="sm"
+            />
+            <span className="text-xs text-slate-400 w-8">
+              {Math.round(volume * 100)}%
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 function RoomContent({ room }: { room: RoomType }) {
   const navigate = useNavigate();
-  const { user } = useAuthStore();
   const { isHost, isMuted, setIsMuted, reset } = useRoomStore();
+  const { masterVolume, setMasterVolume } = useAudioSettingsStore();
   const participants = useParticipants();
   const { localParticipant } = useLocalParticipant();
+  const connectionState = useConnectionState();
   const [isLive, setIsLive] = useState(room.status === 'live');
+  const [micPermission, setMicPermission] = useState<boolean | null>(null);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [showMasterVolume, setShowMasterVolume] = useState(false);
+
+  // Socket event handlers for real-time updates
+  const handleStatusChanged = useCallback((payload: { status: string; isRecording?: boolean }) => {
+    if (payload.status === 'live') {
+      setIsLive(true);
+    } else if (payload.status === 'ended') {
+      navigate(`/room/${room.slug}/ended`);
+    }
+  }, [navigate, room.slug]);
+
+  // Connect to socket room channel
+  useSocket({
+    roomSlug: room.slug,
+    onStatusChanged: handleStatusChanged,
+  });
+
+  // Mikrofon izni kontrolu
+  useEffect(() => {
+    checkMicrophonePermission().then(setMicPermission);
+  }, []);
 
   // Mikrofonu localParticipant durumu ile senkronize et
   useEffect(() => {
@@ -73,10 +179,25 @@ function RoomContent({ room }: { room: RoomType }) {
   }, [localParticipant, localParticipant?.isMicrophoneEnabled, setIsMuted]);
 
   const handleToggleMute = async () => {
-    if (localParticipant) {
+    if (!localParticipant) return;
+
+    // Mikrofon izni yoksa iste
+    if (!micPermission) {
+      const hasPermission = await checkMicrophonePermission();
+      setMicPermission(hasPermission);
+      if (!hasPermission) {
+        alert('Mikrofon izni gerekli. Lutfen tarayici ayarlarindan izin verin.');
+        return;
+      }
+    }
+
+    try {
       const newMicState = !localParticipant.isMicrophoneEnabled;
       await localParticipant.setMicrophoneEnabled(newMicState);
       setIsMuted(!newMicState);
+    } catch (err) {
+      console.error('Mikrofon durumu degistirilemedi:', err);
+      alert('Mikrofon acilamadi. Lutfen tarayici ayarlarinizi kontrol edin.');
     }
   };
 
@@ -84,8 +205,10 @@ function RoomContent({ room }: { room: RoomType }) {
     try {
       await api.startRoom(room.slug);
       setIsLive(true);
+      toast.success('Yayin basladi!');
     } catch (err) {
       console.error('Failed to start room:', err);
+      toast.error('Yayin baslatilamadi');
     }
   };
 
@@ -95,6 +218,7 @@ function RoomContent({ room }: { room: RoomType }) {
       navigate(`/room/${room.slug}/ended`);
     } catch (err) {
       console.error('Failed to end room:', err);
+      toast.error('Yayin bitirilemedi');
     }
   };
 
@@ -113,10 +237,11 @@ function RoomContent({ room }: { room: RoomType }) {
   const copyLink = () => {
     const url = `${window.location.origin}/room/${room.slug}`;
     navigator.clipboard.writeText(url);
+    toast.success('Link panoya kopyalandi!');
   };
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] flex flex-col">
+    <div className="min-h-screen-safe flex flex-col">
       {/* Header */}
       <div className="bg-slate-800 border-b border-slate-700 p-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
@@ -134,6 +259,15 @@ function RoomContent({ room }: { room: RoomType }) {
               <span className="text-slate-500 text-sm">
                 {participants.length} katilimci
               </span>
+              {connectionState !== ConnectionState.Connected && (
+                <span className="flex items-center gap-1 text-yellow-500 text-sm">
+                  <span className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse" />
+                  {connectionState === ConnectionState.Connecting ? 'Baglaniyor...' : 'Baglanti kesik'}
+                </span>
+              )}
+              {micPermission === false && (
+                <span className="text-orange-400 text-sm">Mikrofon izni yok</span>
+              )}
             </div>
           </div>
           <Button variant="ghost" size="sm" onClick={copyLink}>
@@ -163,6 +297,7 @@ function RoomContent({ room }: { room: RoomType }) {
               <ParticipantTile
                 key={participant.identity}
                 participant={participant}
+                isLocal={participant.identity === localParticipant?.identity}
               />
             ))}
           </div>
@@ -220,10 +355,75 @@ function RoomContent({ room }: { room: RoomType }) {
           <Button variant="ghost" size="lg" onClick={handleLeave}>
             Ayril
           </Button>
+
+          {/* Master Volume Control */}
+          <div className="relative">
+            <Button
+              variant="secondary"
+              size="lg"
+              onClick={() => setShowMasterVolume(!showMasterVolume)}
+              className="rounded-full w-14 h-14"
+            >
+              <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                {masterVolume === 0 ? (
+                  <path
+                    fillRule="evenodd"
+                    d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM12.293 7.293a1 1 0 011.414 0L15 8.586l1.293-1.293a1 1 0 111.414 1.414L16.414 10l1.293 1.293a1 1 0 01-1.414 1.414L15 11.414l-1.293 1.293a1 1 0 01-1.414-1.414L13.586 10l-1.293-1.293a1 1 0 010-1.414z"
+                    clipRule="evenodd"
+                  />
+                ) : (
+                  <path
+                    fillRule="evenodd"
+                    d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM14.657 2.929a1 1 0 011.414 0A9.972 9.972 0 0119 10a9.972 9.972 0 01-2.929 7.071 1 1 0 01-1.414-1.414A7.971 7.971 0 0017 10c0-2.21-.894-4.208-2.343-5.657a1 1 0 010-1.414zm-2.829 2.828a1 1 0 011.415 0A5.983 5.983 0 0115 10a5.984 5.984 0 01-1.757 4.243 1 1 0 01-1.415-1.415A3.984 3.984 0 0013 10a3.983 3.983 0 00-1.172-2.828 1 1 0 010-1.415z"
+                    clipRule="evenodd"
+                  />
+                )}
+              </svg>
+            </Button>
+
+            {/* Master Volume Popup */}
+            {showMasterVolume && (
+              <div
+                className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-slate-700 rounded-lg p-3 shadow-lg z-30"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex flex-col items-center gap-2">
+                  <span className="text-xs text-slate-400">Ana Ses</span>
+                  <VolumeSlider
+                    value={masterVolume}
+                    onChange={setMasterVolume}
+                    orientation="vertical"
+                    showIcon={false}
+                  />
+                  <span className="text-xs text-slate-300">
+                    {Math.round(masterVolume * 100)}%
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <Button
+            variant="secondary"
+            size="lg"
+            onClick={() => setIsChatOpen(true)}
+            className="rounded-full w-14 h-14"
+          >
+            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+              <path
+                fillRule="evenodd"
+                d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z"
+                clipRule="evenodd"
+              />
+            </svg>
+          </Button>
         </div>
       </div>
 
       <RoomAudioRenderer />
+
+      {/* Chat Panel */}
+      <Chat roomSlug={room.slug} isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} />
     </div>
   );
 }
@@ -231,7 +431,7 @@ function RoomContent({ room }: { room: RoomType }) {
 export function Room() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
-  const { isAuthenticated, user } = useAuthStore();
+  const { isAuthenticated } = useAuthStore();
   const { setCurrentRoom, setIsHost, setIsSpeaker } = useRoomStore();
 
   const [room, setRoom] = useState<RoomType | null>(null);
@@ -241,8 +441,8 @@ export function Room() {
   const [error, setError] = useState('');
 
   // Odaya baglandiginda mikrofonu otomatik ac
-  const handleConnected = useCallback((lkRoom: LKRoom) => {
-    lkRoom.localParticipant.setMicrophoneEnabled(true).catch(console.error);
+  const handleConnected = useCallback(() => {
+    // Mikrofon otomatik acilacak (audio={true} sayesinde)
   }, []);
 
   useEffect(() => {
@@ -278,7 +478,7 @@ export function Room() {
 
   if (isLoading) {
     return (
-      <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center">
+      <div className="min-h-screen-safe flex items-center justify-center">
         <div className="animate-spin w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full" />
       </div>
     );
@@ -286,7 +486,7 @@ export function Room() {
 
   if (error) {
     return (
-      <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4">
+      <div className="min-h-screen-safe flex items-center justify-center p-4">
         <div className="card text-center">
           <p className="text-red-400 mb-4">{error}</p>
           <Button onClick={() => navigate('/')}>Ana Sayfaya Don</Button>
@@ -307,12 +507,26 @@ export function Room() {
       audio={true}
       video={false}
       onConnected={handleConnected}
+      onError={(error) => {
+        console.error('LiveKit error:', error);
+        setError(`Baglanti hatasi: ${error.message}`);
+      }}
       options={{
         audioCaptureDefaults: {
           autoGainControl: true,
           echoCancellation: true,
           noiseSuppression: true,
         },
+        publishDefaults: {
+          audioPreset: {
+            maxBitrate: 64000,
+          },
+          dtx: true,
+          red: true,
+        },
+        disconnectOnPageLeave: true,
+        adaptiveStream: true,
+        dynacast: true,
       }}
     >
       <RoomContent room={room} />

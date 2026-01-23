@@ -7,7 +7,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -15,11 +14,16 @@ model User {
   username  String   @unique
   email     String?  @unique
   avatarUrl String?
+  bio       String?
   createdAt DateTime @default(now())
 
   // Relations
-  hostedRooms  Room[]            @relation("HostedRooms")
-  participants RoomParticipant[]
+  hostedRooms            Room[]                     @relation("HostedRooms")
+  participants           RoomParticipant[]
+  messages               ChatMessage[]
+  followers              UserFollow[]               @relation("Following")
+  following              UserFollow[]               @relation("Followers")
+  notificationSubscriptions NotificationSubscription[]
 
   @@map("users")
 }
@@ -32,6 +36,8 @@ model Room {
   status      String    @default("waiting") // waiting, live, ended
   maxSpeakers Int       @default(10)
   isPublic    Boolean   @default(true)
+  password    String?   // For private rooms
+  egressId    String?   // LiveKit egress ID for recording
   createdAt   DateTime  @default(now())
   startedAt   DateTime?
   endedAt     DateTime?
@@ -40,7 +46,12 @@ model Room {
   host         User              @relation("HostedRooms", fields: [hostId], references: [id])
   participants RoomParticipant[]
   recordings   Recording[]
+  messages     ChatMessage[]
 
+  // Indexes for common queries
+  @@index([hostId])
+  @@index([status, isPublic, createdAt])
+  @@index([isPublic, status])
   @@map("rooms")
 }
 
@@ -57,20 +68,81 @@ model RoomParticipant {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([roomId, userId])
+  // Indexes for common queries
+  @@index([roomId, leftAt])
+  @@index([userId, joinedAt])
+  @@index([roomId, role, leftAt])
   @@map("room_participants")
 }
 
 model Recording {
-  id             String   @id @default(uuid())
-  roomId         String
-  fileUrl        String
+  id              String   @id @default(uuid())
+  roomId          String
+  fileUrl         String
+  title           String?  // Optional custom title for sharing
+  shareSlug       String?  @unique // Unique slug for public sharing
+  description     String?  // Optional description for sharing
+  isPublic        Boolean  @default(false) // Whether recording is publicly shareable
   durationSeconds Int?
-  fileSizeBytes  BigInt?
-  format         String   @default("mp3")
-  createdAt      DateTime @default(now())
+  fileSizeBytes   BigInt?
+  format          String   @default("mp3")
+  playCount       Int      @default(0) // Track play counts
+  createdAt       DateTime @default(now())
 
   // Relations
   room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
 
+  // Indexes for common queries
+  @@index([roomId])
+  @@index([isPublic, createdAt])
   @@map("recordings")
+}
+
+model ChatMessage {
+  id        String   @id @default(uuid())
+  roomId    String
+  userId    String
+  content   String
+  createdAt DateTime @default(now())
+
+  // Relations
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Indexes for common queries
+  @@index([roomId, createdAt])
+  @@map("chat_messages")
+}
+
+model UserFollow {
+  id          String   @id @default(uuid())
+  followerId  String   // User who is following
+  followingId String   // User being followed
+  createdAt   DateTime @default(now())
+
+  // Relations
+  follower  User @relation("Followers", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("Following", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followingId])
+  // Indexes for common queries
+  @@index([followingId])
+  @@index([followerId])
+  @@map("user_follows")
+}
+
+model NotificationSubscription {
+  id        String   @id @default(uuid())
+  userId    String
+  endpoint  String   @unique // Push subscription endpoint
+  p256dh    String   // Push subscription key
+  auth      String   // Push subscription auth
+  createdAt DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Indexes for common queries
+  @@index([userId])
+  @@map("notification_subscriptions")
 }
