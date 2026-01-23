@@ -4,11 +4,11 @@ const LIVEKIT_URL = process.env.LIVEKIT_URL || '';
 const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || '';
 const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || '';
 
-export function createLiveKitToken(
+export async function createLiveKitToken(
   roomName: string,
   participantIdentity: string,
   canPublish: boolean = true
-): string {
+): Promise<string> {
   const token = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
     identity: participantIdentity,
     ttl: '24h',
@@ -22,7 +22,7 @@ export function createLiveKitToken(
     canPublishData: true,
   });
 
-  return token.toJwt();
+  return await token.toJwt();
 }
 
 export function getLiveKitUrl(): string {

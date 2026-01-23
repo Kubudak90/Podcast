@@ -7,7 +7,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -32,6 +31,7 @@ model Room {
   status      String    @default("waiting") // waiting, live, ended
   maxSpeakers Int       @default(10)
   isPublic    Boolean   @default(true)
+  egressId    String?   // LiveKit egress ID for recording
   createdAt   DateTime  @default(now())
   startedAt   DateTime?
   endedAt     DateTime?

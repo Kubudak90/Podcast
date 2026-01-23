@@ -2,6 +2,10 @@ import { Router, Response } from 'express';
 import { nanoid } from 'nanoid';
 import { prisma } from '../lib/prisma.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
+import { validate } from '../middleware/validate.js';
+import { roomCreateLimiter } from '../middleware/rateLimit.js';
+import { createRoomSchema, changeRoleSchema } from '../lib/validation.js';
+import { startRoomRecording, stopRoomRecording } from '../lib/livekit.js';
 
 const router = Router();
 
@@ -9,13 +13,9 @@ const router = Router();
 router.use(authMiddleware);
 
 // POST /api/rooms - Create room
-router.post('/', async (req: AuthRequest, res: Response) => {
+router.post('/', roomCreateLimiter, validate(createRoomSchema), async (req: AuthRequest, res: Response) => {
   try {
-    const { title, isPublic = true } = req.body;
-
-    if (!title || title.length < 1 || title.length > 100) {
-      return res.status(400).json({ message: 'Title must be between 1 and 100 characters' });
-    }
+    const { title, isPublic = true, maxSpeakers = 10 } = req.body;
 
     const slug = nanoid(8);
 
@@ -25,6 +25,7 @@ router.post('/', async (req: AuthRequest, res: Response) => {
         title,
         hostId: req.userId!,
         isPublic,
+        maxSpeakers,
       },
     });
 
@@ -258,11 +259,23 @@ router.post('/:slug/start', async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ message: 'Room is not in waiting state' });
     }
 
+    // Start recording via LiveKit Egress
+    let egressId: string | null = null;
+    try {
+      const result = await startRoomRecording(room.slug);
+      egressId = result.egressId;
+      console.log(`Recording started for room ${room.slug}, egressId: ${egressId}`);
+    } catch (egressError) {
+      console.error('Failed to start recording:', egressError);
+      // Continue without recording - don't block the room start
+    }
+
     const updatedRoom = await prisma.room.update({
       where: { id: room.id },
       data: {
         status: 'live',
         startedAt: new Date(),
+        egressId,
       },
     });
 
@@ -274,6 +287,7 @@ router.post('/:slug/start', async (req: AuthRequest, res: Response) => {
       status: updatedRoom.status,
       maxSpeakers: updatedRoom.maxSpeakers,
       isPublic: updatedRoom.isPublic,
+      isRecording: !!egressId,
       createdAt: updatedRoom.createdAt.toISOString(),
       startedAt: updatedRoom.startedAt?.toISOString(),
       endedAt: updatedRoom.endedAt?.toISOString(),
@@ -305,6 +319,32 @@ router.post('/:slug/end', async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ message: 'Room has already ended' });
     }
 
+    // Stop recording if active
+    if (room.egressId) {
+      try {
+        await stopRoomRecording(room.egressId);
+        console.log(`Recording stopped for room ${room.slug}, egressId: ${room.egressId}`);
+
+        // Calculate duration
+        const durationSeconds = room.startedAt
+          ? Math.floor((Date.now() - room.startedAt.getTime()) / 1000)
+          : null;
+
+        // Create recording entry
+        await prisma.recording.create({
+          data: {
+            roomId: room.id,
+            fileUrl: `recordings/${room.slug}-${room.startedAt?.getTime()}.mp3`,
+            durationSeconds,
+            format: 'mp3',
+          },
+        });
+      } catch (egressError) {
+        console.error('Failed to stop recording:', egressError);
+        // Continue ending the room even if recording stop fails
+      }
+    }
+
     // End room and mark all participants as left
     const [updatedRoom] = await prisma.$transaction([
       prisma.room.update({
@@ -312,6 +352,7 @@ router.post('/:slug/end', async (req: AuthRequest, res: Response) => {
         data: {
           status: 'ended',
           endedAt: new Date(),
+          egressId: null, // Clear egress ID
         },
       }),
       prisma.roomParticipant.updateMany({
@@ -344,14 +385,10 @@ router.post('/:slug/end', async (req: AuthRequest, res: Response) => {
 });
 
 // PATCH /api/rooms/:slug/role - Change role
-router.patch('/:slug/role', async (req: AuthRequest, res: Response) => {
+router.patch('/:slug/role', validate(changeRoleSchema), async (req: AuthRequest, res: Response) => {
   try {
     const { slug } = req.params;
     const { userId, role } = req.body;
-
-    if (!['speaker', 'listener'].includes(role)) {
-      return res.status(400).json({ message: 'Invalid role' });
-    }
 
     const room = await prisma.room.findUnique({
       where: { slug },

@@ -1,17 +1,16 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authMiddleware, generateToken, AuthRequest } from '../middleware/auth.js';
+import { validate } from '../middleware/validate.js';
+import { authLimiter } from '../middleware/rateLimit.js';
+import { registerSchema, loginSchema } from '../lib/validation.js';
 
 const router = Router();
 
 // POST /api/auth/register
-router.post('/register', async (req: Request, res: Response) => {
+router.post('/register', authLimiter, validate(registerSchema), async (req: Request, res: Response) => {
   try {
     const { username, email } = req.body;
-
-    if (!username || username.length < 2 || username.length > 50) {
-      return res.status(400).json({ message: 'Username must be between 2 and 50 characters' });
-    }
 
     // Check if username exists
     const existingUser = await prisma.user.findUnique({
@@ -49,13 +48,9 @@ router.post('/register', async (req: Request, res: Response) => {
 });
 
 // POST /api/auth/login
-router.post('/login', async (req: Request, res: Response) => {
+router.post('/login', authLimiter, validate(loginSchema), async (req: Request, res: Response) => {
   try {
     const { username } = req.body;
-
-    if (!username) {
-      return res.status(400).json({ message: 'Username is required' });
-    }
 
     const user = await prisma.user.findUnique({
       where: { username },

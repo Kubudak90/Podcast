@@ -5,6 +5,7 @@ import authRoutes from './routes/auth.js';
 import roomsRoutes from './routes/rooms.js';
 import recordingsRoutes from './routes/recordings.js';
 import livekitRoutes from './routes/livekit.js';
+import { apiLimiter } from './middleware/rateLimit.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -15,6 +16,9 @@ app.use(cors({
   credentials: true,
 }));
 app.use(express.json());
+
+// Apply rate limiting to all API routes
+app.use('/api', apiLimiter);
 
 // Health check
 app.get('/health', (req, res) => {
