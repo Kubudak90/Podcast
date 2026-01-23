@@ -19,7 +19,7 @@ Object.assign(navigator, {
 });
 
 describe('ShareModal Component', () => {
-  const mockApi = api as {
+  const mockApi = api as unknown as {
     updateRecording: ReturnType<typeof vi.fn>;
   };
 

@@ -13,7 +13,7 @@ vi.mock('../lib/push', () => ({
 }));
 
 describe('NotificationToggle Component', () => {
-  const mockPush = pushModule as {
+  const mockPush = pushModule as unknown as {
     isPushSupported: ReturnType<typeof vi.fn>;
     getNotificationPermission: ReturnType<typeof vi.fn>;
     subscribeToPush: ReturnType<typeof vi.fn>;

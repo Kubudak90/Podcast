@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 
 interface VolumeSliderProps {
   value: number; // 0-1 arasi
@@ -25,7 +25,7 @@ export function VolumeSlider({
   const isVertical = orientation === 'vertical';
   const isMuted = value === 0;
 
-  const handleChange = (clientX: number, clientY: number) => {
+  const handleChange = useCallback((clientX: number, clientY: number) => {
     if (!sliderRef.current || disabled) return;
 
     const rect = sliderRef.current.getBoundingClientRect();
@@ -38,7 +38,7 @@ export function VolumeSlider({
     }
 
     onChange(Math.max(0, Math.min(1, newValue)));
-  };
+  }, [disabled, isVertical, onChange]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     setIsDragging(true);
@@ -78,7 +78,7 @@ export function VolumeSlider({
       document.removeEventListener('touchmove', handleTouchMove);
       document.removeEventListener('touchend', handleEnd);
     };
-  }, [isDragging]);
+  }, [isDragging, handleChange]);
 
   const toggleMute = () => {
     if (disabled) return;

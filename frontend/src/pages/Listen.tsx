@@ -30,7 +30,7 @@ export function Listen() {
         // Get download URL for audio
         const { url } = await api.getPublicRecordingDownload(shareSlug);
         setAudioUrl(url);
-      } catch (err) {
+      } catch {
         setError('Recording not found or not public');
       } finally {
         setLoading(false);

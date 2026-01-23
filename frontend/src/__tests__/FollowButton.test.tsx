@@ -12,7 +12,7 @@ vi.mock('../lib/api', () => ({
 }));
 
 describe('FollowButton Component', () => {
-  const mockApi = api as {
+  const mockApi = api as unknown as {
     followUser: ReturnType<typeof vi.fn>;
     unfollowUser: ReturnType<typeof vi.fn>;
   };
