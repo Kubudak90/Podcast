@@ -3,39 +3,54 @@ import request from 'supertest';
 import { generateToken } from '../middleware/auth.js';
 
 // Mock modules - factories must not reference external variables
-vi.mock('../lib/prisma.js', () => ({
-  prisma: {
-    user: {
-      findUnique: vi.fn(),
-      findFirst: vi.fn(),
-      create: vi.fn(),
-      update: vi.fn(),
+vi.mock('../lib/prisma.js', () => {
+  const roomParticipantMock = {
+    findUnique: vi.fn(),
+    findMany: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    updateMany: vi.fn(),
+    count: vi.fn(),
+  };
+  const recordingMock = {
+    findUnique: vi.fn(),
+    findMany: vi.fn(),
+    create: vi.fn(),
+  };
+  const roomMock = {
+    findUnique: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+  };
+
+  return {
+    prisma: {
+      user: {
+        findUnique: vi.fn(),
+        findFirst: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
+      },
+      room: roomMock,
+      roomParticipant: roomParticipantMock,
+      recording: recordingMock,
+      chatMessage: {
+        findMany: vi.fn(),
+        create: vi.fn(),
+      },
+      // Transaction mock that passes through to the real mock functions
+      $transaction: vi.fn().mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
+        // Create a tx object that mirrors prisma structure
+        const tx = {
+          room: roomMock,
+          roomParticipant: roomParticipantMock,
+          recording: recordingMock,
+        };
+        return callback(tx);
+      }),
     },
-    room: {
-      findUnique: vi.fn(),
-      create: vi.fn(),
-      update: vi.fn(),
-    },
-    roomParticipant: {
-      findUnique: vi.fn(),
-      findMany: vi.fn(),
-      create: vi.fn(),
-      update: vi.fn(),
-      updateMany: vi.fn(),
-      count: vi.fn(),
-    },
-    recording: {
-      findUnique: vi.fn(),
-      findMany: vi.fn(),
-      create: vi.fn(),
-    },
-    chatMessage: {
-      findMany: vi.fn(),
-      create: vi.fn(),
-    },
-    $transaction: vi.fn(),
-  },
-}));
+  };
+});
 
 vi.mock('../lib/livekit.js', () => ({
   createLiveKitToken: vi.fn().mockResolvedValue('mock-token'),

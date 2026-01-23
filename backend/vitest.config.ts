@@ -8,5 +8,9 @@ export default defineConfig({
     coverage: {
       reporter: ['text', 'json', 'html'],
     },
+    env: {
+      JWT_SECRET: 'test-secret-key-for-testing-only',
+      DATABASE_URL: 'postgresql://test:test@localhost:5432/test',
+    },
   },
 });

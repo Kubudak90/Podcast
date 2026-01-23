@@ -248,7 +248,7 @@ router.get('/feed', optionalAuthMiddleware, async (req: AuthRequest, res: Respon
     ]);
 
     res.json({
-      recordings: recordings.map((r) => ({
+      recordings: recordings.map((r: typeof recordings[number]) => ({
         id: r.id,
         title: r.title || r.room.title,
         description: r.description,

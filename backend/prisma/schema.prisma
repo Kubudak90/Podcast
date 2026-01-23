@@ -48,6 +48,10 @@ model Room {
   recordings   Recording[]
   messages     ChatMessage[]
 
+  // Indexes for common queries
+  @@index([hostId])
+  @@index([status, isPublic, createdAt])
+  @@index([isPublic, status])
   @@map("rooms")
 }
 
@@ -64,6 +68,10 @@ model RoomParticipant {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([roomId, userId])
+  // Indexes for common queries
+  @@index([roomId, leftAt])
+  @@index([userId, joinedAt])
+  @@index([roomId, role, leftAt])
   @@map("room_participants")
 }
 
@@ -84,6 +92,9 @@ model Recording {
   // Relations
   room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
 
+  // Indexes for common queries
+  @@index([roomId])
+  @@index([isPublic, createdAt])
   @@map("recordings")
 }
 
@@ -98,6 +109,8 @@ model ChatMessage {
   room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  // Indexes for common queries
+  @@index([roomId, createdAt])
   @@map("chat_messages")
 }
 
@@ -112,6 +125,9 @@ model UserFollow {
   following User @relation("Following", fields: [followingId], references: [id], onDelete: Cascade)
 
   @@unique([followerId, followingId])
+  // Indexes for common queries
+  @@index([followingId])
+  @@index([followerId])
   @@map("user_follows")
 }
 
@@ -126,5 +142,7 @@ model NotificationSubscription {
   // Relations
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  // Indexes for common queries
+  @@index([userId])
   @@map("notification_subscriptions")
 }

@@ -1,10 +1,24 @@
 import { Request, Response, NextFunction } from 'express';
-import type { ParamsDictionary } from 'express-serve-static-core';
+import type { ParamsDictionary, Query } from 'express-serve-static-core';
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+function getJwtSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error('JWT_SECRET environment variable is required');
+  }
+  return secret;
+}
 
-export interface AuthRequest<P = ParamsDictionary> extends Request<P> {
+const JWT_SECRET = getJwtSecret();
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export interface AuthRequest<
+  P = ParamsDictionary,
+  ResBody = unknown,
+  ReqBody = Record<string, any>,
+  ReqQuery = Query
+> extends Request<P, ResBody, ReqBody, ReqQuery> {
   userId?: string;
   user?: {
     id: string;

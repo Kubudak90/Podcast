@@ -1,5 +1,6 @@
 import { Router, Response } from 'express';
 import { nanoid } from 'nanoid';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
@@ -43,6 +44,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       };
     }
 
+    // Use _count with where clause to avoid N+1 query problem
     const [rooms, totalCount] = await Promise.all([
       prisma.room.findMany({
         where,
@@ -51,7 +53,11 @@ router.get('/', async (req: AuthRequest, res: Response) => {
             select: { id: true, username: true, avatarUrl: true },
           },
           _count: {
-            select: { participants: true },
+            select: {
+              participants: {
+                where: { leftAt: null }, // Only count active participants
+              },
+            },
           },
         },
         orderBy: [
@@ -64,28 +70,20 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       prisma.room.count({ where }),
     ]);
 
-    // Get active participant count for each room
-    const roomsWithActiveCount = await Promise.all(
-      rooms.map(async (room: typeof rooms[number]) => {
-        const activeParticipants = await prisma.roomParticipant.count({
-          where: { roomId: room.id, leftAt: null },
-        });
-
-        return {
-          id: room.id,
-          slug: room.slug,
-          title: room.title,
-          status: room.status,
-          isPublic: room.isPublic,
-          hasPassword: !!room.password,
-          host: room.host,
-          participantCount: activeParticipants,
-          maxSpeakers: room.maxSpeakers,
-          createdAt: room.createdAt.toISOString(),
-          startedAt: room.startedAt?.toISOString() || null,
-        };
-      })
-    );
+    // Map rooms to response format (no additional queries needed)
+    const roomsWithActiveCount = rooms.map((room: typeof rooms[number]) => ({
+      id: room.id,
+      slug: room.slug,
+      title: room.title,
+      status: room.status,
+      isPublic: room.isPublic,
+      hasPassword: !!room.password,
+      host: room.host,
+      participantCount: room._count.participants,
+      maxSpeakers: room.maxSpeakers,
+      createdAt: room.createdAt.toISOString(),
+      startedAt: room.startedAt?.toISOString() || null,
+    }));
 
     res.json({
       rooms: roomsWithActiveCount,
@@ -257,31 +255,36 @@ router.post('/:slug/join', validate(joinRoomSchema), async (req: AuthRequest<{ s
       });
     }
 
-    // Count current speakers
-    const speakerCount = await prisma.roomParticipant.count({
-      where: {
-        roomId: room.id,
-        role: { in: ['host', 'speaker'] },
-        leftAt: null,
-      },
-    });
+    // Use transaction to prevent race condition when counting speakers
+    const participant = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      // Count current speakers
+      const speakerCount = await tx.roomParticipant.count({
+        where: {
+          roomId: room.id,
+          role: { in: ['host', 'speaker'] },
+          leftAt: null,
+        },
+      });
 
-    // Determine role
-    const role = speakerCount < room.maxSpeakers ? 'speaker' : 'listener';
+      // Determine role
+      const role = speakerCount < room.maxSpeakers ? 'speaker' : 'listener';
 
-    // Create or update participant
-    const participant = existingParticipant
-      ? await prisma.roomParticipant.update({
+      // Create or update participant
+      if (existingParticipant) {
+        return tx.roomParticipant.update({
           where: { id: existingParticipant.id },
           data: { leftAt: null, role },
-        })
-      : await prisma.roomParticipant.create({
+        });
+      } else {
+        return tx.roomParticipant.create({
           data: {
             roomId: room.id,
             userId: req.userId!,
             role,
           },
         });
+      }
+    });
 
     // Emit socket event for new participant
     emitParticipantJoined(room.slug, {
@@ -466,7 +469,7 @@ router.post('/:slug/end', async (req: AuthRequest<{ slug: string }>, res: Respon
     }
 
     // End room, mark all participants as left, and create recording - all in a transaction
-    const updatedRoom = await prisma.$transaction(async (tx) => {
+    const updatedRoom = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       // Create recording entry if we have recording data
       if (recordingData) {
         await tx.recording.create({
@@ -547,7 +550,7 @@ router.patch('/:slug/role', validate(changeRoleSchema), async (req: AuthRequest<
     });
 
     // Emit socket event for role change
-    emitParticipantRoleChanged(room.slug, userId, role);
+    emitParticipantRoleChanged(room.slug, userId as string, role as string);
 
     res.json({ message: 'Role updated successfully' });
   } catch (error) {
