@@ -1,4 +1,4 @@
-import type { User, Room, Recording, AuthResponse, LiveKitTokenResponse, RoomHistoryItem } from '../types';
+import type { User, Room, Recording, AuthResponse, LiveKitTokenResponse, RoomHistoryItem, PublicRoomsResponse } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
@@ -82,6 +82,21 @@ class ApiClient {
   }
 
   // Rooms
+  async getPublicRooms(options?: {
+    limit?: number;
+    offset?: number;
+    search?: string;
+    status?: 'live' | 'waiting';
+  }): Promise<PublicRoomsResponse> {
+    const params = new URLSearchParams();
+    if (options?.limit) params.set('limit', String(options.limit));
+    if (options?.offset) params.set('offset', String(options.offset));
+    if (options?.search) params.set('search', options.search);
+    if (options?.status) params.set('status', options.status);
+    const query = params.toString();
+    return this.request<PublicRoomsResponse>(`/rooms${query ? `?${query}` : ''}`);
+  }
+
   async createRoom(title: string, isPublic: boolean = true, password?: string): Promise<Room> {
     return this.request<Room>('/rooms', {
       method: 'POST',

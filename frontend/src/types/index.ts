@@ -87,3 +87,28 @@ export interface RoomHistoryItem {
   endedAt?: string;
   createdAt: string;
 }
+
+export interface PublicRoom {
+  id: string;
+  slug: string;
+  title: string;
+  status: 'waiting' | 'live';
+  isPublic: boolean;
+  hasPassword: boolean;
+  host: {
+    id: string;
+    username: string;
+    avatarUrl?: string;
+  };
+  participantCount: number;
+  maxSpeakers: number;
+  createdAt: string;
+  startedAt?: string;
+}
+
+export interface PublicRoomsResponse {
+  rooms: PublicRoom[];
+  total: number;
+  limit: number;
+  offset: number;
+}

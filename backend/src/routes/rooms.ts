@@ -14,6 +14,90 @@ const router = Router();
 // Apply auth middleware to all routes
 router.use(authMiddleware);
 
+// GET /api/rooms - List public rooms
+router.get('/', async (req: AuthRequest, res: Response) => {
+  try {
+    const limit = Math.min(Number(req.query.limit) || 20, 50);
+    const offset = Number(req.query.offset) || 0;
+    const search = req.query.search as string | undefined;
+    const status = req.query.status as string | undefined; // 'live', 'waiting', or undefined for both
+
+    // Build where clause
+    const where: {
+      isPublic: boolean;
+      status: { in: string[] } | string;
+      title?: { contains: string; mode: 'insensitive' };
+    } = {
+      isPublic: true,
+      status: status && ['live', 'waiting'].includes(status)
+        ? status
+        : { in: ['live', 'waiting'] },
+    };
+
+    // Add search filter
+    if (search && search.trim()) {
+      where.title = {
+        contains: search.trim(),
+        mode: 'insensitive',
+      };
+    }
+
+    const [rooms, totalCount] = await Promise.all([
+      prisma.room.findMany({
+        where,
+        include: {
+          host: {
+            select: { id: true, username: true, avatarUrl: true },
+          },
+          _count: {
+            select: { participants: true },
+          },
+        },
+        orderBy: [
+          { status: 'asc' }, // 'live' before 'waiting'
+          { createdAt: 'desc' },
+        ],
+        take: limit,
+        skip: offset,
+      }),
+      prisma.room.count({ where }),
+    ]);
+
+    // Get active participant count for each room
+    const roomsWithActiveCount = await Promise.all(
+      rooms.map(async (room: typeof rooms[number]) => {
+        const activeParticipants = await prisma.roomParticipant.count({
+          where: { roomId: room.id, leftAt: null },
+        });
+
+        return {
+          id: room.id,
+          slug: room.slug,
+          title: room.title,
+          status: room.status,
+          isPublic: room.isPublic,
+          hasPassword: !!room.password,
+          host: room.host,
+          participantCount: activeParticipants,
+          maxSpeakers: room.maxSpeakers,
+          createdAt: room.createdAt.toISOString(),
+          startedAt: room.startedAt?.toISOString() || null,
+        };
+      })
+    );
+
+    res.json({
+      rooms: roomsWithActiveCount,
+      total: totalCount,
+      limit,
+      offset,
+    });
+  } catch (error) {
+    logError(error as Error, { action: 'list_public_rooms' });
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 // POST /api/rooms - Create room
 router.post('/', roomCreateLimiter, validate(createRoomSchema), async (req: AuthRequest, res: Response) => {
   try {
