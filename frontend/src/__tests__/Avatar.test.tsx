@@ -43,46 +43,48 @@ describe('Avatar Component', () => {
   describe('sizes', () => {
     it('should render with default md size', () => {
       const { container } = render(<Avatar name="John" />);
-      const avatar = container.firstChild;
-      expect(avatar).toHaveClass('w-12', 'h-12');
+      // Avatar content has z-10 class
+      const avatarContent = container.querySelector('.z-10');
+      expect(avatarContent).toHaveClass('w-12', 'h-12');
     });
 
     it('should render with sm size', () => {
       const { container } = render(<Avatar name="John" size="sm" />);
-      const avatar = container.firstChild;
-      expect(avatar).toHaveClass('w-8', 'h-8');
+      const avatarContent = container.querySelector('.z-10');
+      expect(avatarContent).toHaveClass('w-8', 'h-8');
     });
 
     it('should render with lg size', () => {
       const { container } = render(<Avatar name="John" size="lg" />);
-      const avatar = container.firstChild;
-      expect(avatar).toHaveClass('w-16', 'h-16');
+      const avatarContent = container.querySelector('.z-10');
+      expect(avatarContent).toHaveClass('w-16', 'h-16');
     });
 
     it('should render with xl size', () => {
       const { container } = render(<Avatar name="John" size="xl" />);
-      const avatar = container.firstChild;
-      expect(avatar).toHaveClass('w-24', 'h-24');
+      const avatarContent = container.querySelector('.z-10');
+      expect(avatarContent).toHaveClass('w-24', 'h-24');
     });
   });
 
   describe('speaking indicator', () => {
     it('should show speaking ring when isSpeaking is true', () => {
       const { container } = render(<Avatar name="John" isSpeaking />);
-      const avatar = container.firstChild;
-      expect(avatar).toHaveClass('ring-4', 'ring-green-500');
+      // The speaking indicator is an animated ring element with animate-speaking-ring class
+      const speakingRing = container.querySelector('.animate-speaking-ring');
+      expect(speakingRing).toBeInTheDocument();
     });
 
     it('should not show speaking ring when isSpeaking is false', () => {
       const { container } = render(<Avatar name="John" isSpeaking={false} />);
-      const avatar = container.firstChild;
-      expect(avatar).not.toHaveClass('ring-4');
+      const speakingRing = container.querySelector('.animate-speaking-ring');
+      expect(speakingRing).not.toBeInTheDocument();
     });
 
     it('should show speaking ring on image avatar', () => {
-      render(<Avatar name="John" src="https://example.com/avatar.png" isSpeaking />);
-      const img = screen.getByRole('img');
-      expect(img).toHaveClass('ring-4', 'ring-green-500');
+      const { container } = render(<Avatar name="John" src="https://example.com/avatar.png" isSpeaking />);
+      const speakingRing = container.querySelector('.animate-speaking-ring');
+      expect(speakingRing).toBeInTheDocument();
     });
   });
 
@@ -91,8 +93,9 @@ describe('Avatar Component', () => {
       const { container: container1 } = render(<Avatar name="Alice" />);
       const { container: container2 } = render(<Avatar name="Alice" />);
 
-      const avatar1 = container1.firstChild as HTMLElement;
-      const avatar2 = container2.firstChild as HTMLElement;
+      // Avatar content has z-10 class with bg-* color
+      const avatar1 = container1.querySelector('.z-10') as HTMLElement;
+      const avatar2 = container2.querySelector('.z-10') as HTMLElement;
 
       // Get the bg-* class
       const getBgClass = (el: HTMLElement) =>
@@ -105,8 +108,8 @@ describe('Avatar Component', () => {
       const { container: container1 } = render(<Avatar name="Alice" />);
       const { container: container2 } = render(<Avatar name="Bob" />);
 
-      const avatar1 = container1.firstChild as HTMLElement;
-      const avatar2 = container2.firstChild as HTMLElement;
+      const avatar1 = container1.querySelector('.z-10') as HTMLElement;
+      const avatar2 = container2.querySelector('.z-10') as HTMLElement;
 
       const getBgClass = (el: HTMLElement) =>
         Array.from(el.classList).find(c => c.startsWith('bg-'));

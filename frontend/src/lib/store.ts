@@ -61,3 +61,33 @@ export const useRoomStore = create<RoomState>((set) => ({
       isMuted: true,
     }),
 }));
+
+// Ses ayarlari state'i
+interface AudioSettingsState {
+  masterVolume: number; // 0-1
+  participantVolumes: Record<string, number>; // participantId -> volume (0-1)
+  setMasterVolume: (volume: number) => void;
+  setParticipantVolume: (participantId: string, volume: number) => void;
+  resetVolumes: () => void;
+}
+
+export const useAudioSettingsStore = create<AudioSettingsState>()(
+  persist(
+    (set) => ({
+      masterVolume: 1,
+      participantVolumes: {},
+      setMasterVolume: (volume) => set({ masterVolume: volume }),
+      setParticipantVolume: (participantId, volume) =>
+        set((state) => ({
+          participantVolumes: {
+            ...state.participantVolumes,
+            [participantId]: volume,
+          },
+        })),
+      resetVolumes: () => set({ masterVolume: 1, participantVolumes: {} }),
+    }),
+    {
+      name: 'audio-settings',
+    }
+  )
+);

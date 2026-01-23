@@ -66,3 +66,24 @@ export interface LiveKitTokenResponse {
   token: string;
   url: string;
 }
+
+export interface RoomHistoryItem {
+  id: string;
+  slug: string;
+  title: string;
+  status: 'waiting' | 'live' | 'ended';
+  isPublic: boolean;
+  host: {
+    id: string;
+    username: string;
+    avatarUrl?: string;
+  };
+  participantCount: number;
+  recordingCount: number;
+  role: 'host' | 'speaker' | 'listener';
+  joinedAt: string;
+  leftAt?: string;
+  startedAt?: string;
+  endedAt?: string;
+  createdAt: string;
+}

@@ -1,4 +1,4 @@
-import type { User, Room, Recording, AuthResponse, LiveKitTokenResponse } from '../types';
+import type { User, Room, Recording, AuthResponse, LiveKitTokenResponse, RoomHistoryItem } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
@@ -71,6 +71,14 @@ class ApiClient {
       method: 'PATCH',
       body: JSON.stringify(data),
     });
+  }
+
+  async getRoomHistory(limit?: number, offset?: number): Promise<RoomHistoryItem[]> {
+    const params = new URLSearchParams();
+    if (limit) params.set('limit', String(limit));
+    if (offset) params.set('offset', String(offset));
+    const query = params.toString();
+    return this.request<RoomHistoryItem[]>(`/auth/rooms${query ? `?${query}` : ''}`);
   }
 
   // Rooms

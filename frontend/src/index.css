@@ -113,3 +113,45 @@ body {
     opacity: 1;
   }
 }
+
+/* Speaking animations */
+@keyframes speaking-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(34, 197, 94, 0);
+  }
+}
+
+@keyframes speaking-ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+@keyframes audio-wave {
+  0%, 100% {
+    transform: scaleY(0.3);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+.animate-speaking-pulse {
+  animation: speaking-pulse 1.5s ease-in-out infinite;
+}
+
+.animate-speaking-ring {
+  animation: speaking-ring 1s ease-out infinite;
+}
+
+.audio-wave-bar {
+  animation: audio-wave 0.5s ease-in-out infinite;
+}

@@ -110,6 +110,55 @@ router.get('/me', authMiddleware, async (req: AuthRequest, res: Response) => {
   }
 });
 
+// GET /api/auth/rooms - Get user's room history
+router.get('/rooms', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const limit = Math.min(Number(req.query.limit) || 20, 50);
+    const offset = Number(req.query.offset) || 0;
+
+    const participants = await prisma.roomParticipant.findMany({
+      where: { userId: req.userId },
+      include: {
+        room: {
+          include: {
+            host: {
+              select: { id: true, username: true, avatarUrl: true },
+            },
+            _count: {
+              select: { participants: true, recordings: true },
+            },
+          },
+        },
+      },
+      orderBy: { joinedAt: 'desc' },
+      take: limit,
+      skip: offset,
+    });
+
+    const rooms = participants.map((p: typeof participants[number]) => ({
+      id: p.room.id,
+      slug: p.room.slug,
+      title: p.room.title,
+      status: p.room.status,
+      isPublic: p.room.isPublic,
+      host: p.room.host,
+      participantCount: p.room._count.participants,
+      recordingCount: p.room._count.recordings,
+      role: p.role,
+      joinedAt: p.joinedAt.toISOString(),
+      leftAt: p.leftAt?.toISOString() || null,
+      startedAt: p.room.startedAt?.toISOString() || null,
+      endedAt: p.room.endedAt?.toISOString() || null,
+      createdAt: p.room.createdAt.toISOString(),
+    }));
+
+    res.json(rooms);
+  } catch (error) {
+    logError(error as Error, { action: 'get_user_rooms', userId: req.userId });
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 // PATCH /api/auth/profile - Update user profile
 router.patch('/profile', authMiddleware, validate(updateProfileSchema), async (req: AuthRequest, res: Response) => {
   try {
