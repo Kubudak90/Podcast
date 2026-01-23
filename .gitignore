@@ -43,3 +43,8 @@ backend/src/generated/
 # Misc
 *.tsbuildinfo
 .cache/
+
+# Deployment
+certbot/
+*.sql
+nginx/nginx.conf.bak
