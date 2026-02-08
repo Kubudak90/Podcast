@@ -4,11 +4,11 @@ import bcrypt from 'bcryptjs';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
-import { validate } from '../middleware/validate.js';
+import { validate, validateQuery } from '../middleware/validate.js';
 import { roomCreateLimiter } from '../middleware/rateLimit.js';
-import { createRoomSchema, changeRoleSchema, joinRoomSchema } from '../lib/validation.js';
+import { createRoomSchema, changeRoleSchema, joinRoomSchema, roomListQuerySchema } from '../lib/validation.js';
 import { startRoomRecording, stopRoomRecording } from '../lib/livekit.js';
-import { emitParticipantJoined, emitParticipantLeft, emitRoomStatusChanged, emitParticipantRoleChanged } from '../lib/socket.js';
+import { emitParticipantJoined, emitParticipantLeft, emitRoomStatusChanged, emitParticipantRoleChanged, emitRoomUpdate } from '../lib/socket.js';
 import { logRoom, logRecording, logError } from '../lib/logger.js';
 import { notifyFollowersOfLive } from '../lib/push.js';
 
@@ -18,12 +18,12 @@ const router = Router();
 router.use(authMiddleware);
 
 // GET /api/rooms - List public rooms
-router.get('/', async (req: AuthRequest, res: Response) => {
+router.get('/', validateQuery(roomListQuerySchema), async (req: AuthRequest, res: Response) => {
   try {
-    const limit = Math.min(Number(req.query.limit) || 20, 50);
+    const limit = Number(req.query.limit) || 20;
     const offset = Number(req.query.offset) || 0;
     const search = req.query.search as string | undefined;
-    const status = req.query.status as string | undefined; // 'live', 'waiting', or undefined for both
+    const status = req.query.status as string | undefined;
 
     // Build where clause
     const where: {
@@ -387,6 +387,11 @@ router.post('/:slug/start', async (req: AuthRequest<{ slug: string }>, res: Resp
       logRecording('start', room.slug, egressId);
     } catch (egressError) {
       logRecording('error', room.slug, undefined, (egressError as Error).message);
+      // Notify users that recording failed
+      emitRoomUpdate(room.slug, {
+        type: 'recording_stopped',
+        payload: { error: 'Kayit baslatilamadi' },
+      });
       // Continue without recording - don't block the room start
     }
 
@@ -471,6 +476,10 @@ router.post('/:slug/end', async (req: AuthRequest<{ slug: string }>, res: Respon
         }
       } catch (egressError) {
         logRecording('error', room.slug, room.egressId, (egressError as Error).message);
+        emitRoomUpdate(room.slug, {
+          type: 'recording_stopped',
+          payload: { error: 'Kayit durdurulurken hata olustu' },
+        });
         // Continue ending the room even if recording stop fails
       }
     }

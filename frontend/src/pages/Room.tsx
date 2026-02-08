@@ -140,7 +140,7 @@ function ParticipantTile({
 
 function RoomContent({ room }: { room: RoomType }) {
   const navigate = useNavigate();
-  const { isHost, isMuted, setIsMuted, reset } = useRoomStore();
+  const { isHost, isMuted, setIsMuted, setIsSpeaker, reset } = useRoomStore();
   const { masterVolume, setMasterVolume } = useAudioSettingsStore();
   const participants = useParticipants();
   const { localParticipant } = useLocalParticipant();
@@ -159,10 +159,25 @@ function RoomContent({ room }: { room: RoomType }) {
     }
   }, [navigate, room.slug]);
 
+  const handleRoleChanged = useCallback((payload: { userId: string; role: string }) => {
+    const currentUserId = useAuthStore.getState().user?.id;
+    if (payload.userId === currentUserId) {
+      const newIsSpeaker = payload.role === 'speaker' || payload.role === 'host';
+      setIsSpeaker(newIsSpeaker);
+      toast.info(newIsSpeaker ? 'Konusmaci oldun!' : 'Dinleyici moduna aldiniz');
+    }
+  }, [setIsSpeaker]);
+
+  const handleRecordingError = useCallback((payload: { error: string }) => {
+    toast.error(payload.error);
+  }, []);
+
   // Connect to socket room channel
   useSocket({
     roomSlug: room.slug,
     onStatusChanged: handleStatusChanged,
+    onRoleChanged: handleRoleChanged,
+    onRecordingError: handleRecordingError,
   });
 
   // Mikrofon izni kontrolu

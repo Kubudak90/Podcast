@@ -64,6 +64,17 @@ export const updateProfileSchema = z.object({
   avatarUrl: z.string().url('Invalid URL').optional().nullable(),
 });
 
+// Query parameter schemas for GET requests
+export const paginationQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).optional().default(20),
+  offset: z.coerce.number().int().min(0).optional().default(0),
+});
+
+export const roomListQuerySchema = paginationQuerySchema.extend({
+  search: z.string().max(100).optional(),
+  status: z.enum(['live', 'waiting']).optional(),
+});
+
 // Type exports
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;

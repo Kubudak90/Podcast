@@ -15,3 +15,19 @@ export function validate(schema: ZodSchema) {
     }
   };
 }
+
+export function validateQuery(schema: ZodSchema) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const parsed = schema.parse(req.query);
+      req.query = parsed as typeof req.query;
+      next();
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const messages = error.issues.map((issue) => issue.message).join(', ');
+        return res.status(400).json({ message: messages });
+      }
+      return res.status(400).json({ message: 'Invalid query parameters' });
+    }
+  };
+}

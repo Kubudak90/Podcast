@@ -12,6 +12,7 @@ import type {
   ParticipantLeftPayload,
   StatusChangedPayload,
   RoleChangedPayload,
+  RecordingErrorPayload,
 } from '../lib/socket';
 import { useAuthStore } from '../lib/store';
 
@@ -21,10 +22,11 @@ interface UseSocketOptions {
   onParticipantLeft?: (payload: ParticipantLeftPayload) => void;
   onStatusChanged?: (payload: StatusChangedPayload) => void;
   onRoleChanged?: (payload: RoleChangedPayload) => void;
+  onRecordingError?: (payload: RecordingErrorPayload) => void;
 }
 
 export function useSocket(options: UseSocketOptions = {}) {
-  const { roomSlug, onParticipantJoined, onParticipantLeft, onStatusChanged, onRoleChanged } = options;
+  const { roomSlug, onParticipantJoined, onParticipantLeft, onStatusChanged, onRoleChanged, onRecordingError } = options;
   const { isAuthenticated } = useAuthStore();
 
   useEffect(() => {
@@ -46,6 +48,9 @@ export function useSocket(options: UseSocketOptions = {}) {
         case 'participant_role_changed':
           onRoleChanged?.(event.payload as RoleChangedPayload);
           break;
+        case 'recording_stopped':
+          onRecordingError?.(event.payload as RecordingErrorPayload);
+          break;
       }
     };
 
@@ -54,7 +59,7 @@ export function useSocket(options: UseSocketOptions = {}) {
     return () => {
       socket.off('room:update', handleRoomUpdate);
     };
-  }, [isAuthenticated, onParticipantJoined, onParticipantLeft, onStatusChanged, onRoleChanged]);
+  }, [isAuthenticated, onParticipantJoined, onParticipantLeft, onStatusChanged, onRoleChanged, onRecordingError]);
 
   // Join/leave room channel
   useEffect(() => {
