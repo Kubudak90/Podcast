@@ -4,7 +4,15 @@ import jwt from 'jsonwebtoken';
 import { logger } from './logger.js';
 import { prisma } from './prisma.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+function getJwtSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error('JWT_SECRET environment variable is required');
+  }
+  return secret;
+}
+
+const JWT_SECRET = getJwtSecret();
 
 interface AuthenticatedSocket extends Socket {
   userId?: string;

@@ -1,5 +1,6 @@
 import { Router, Response } from 'express';
 import { nanoid } from 'nanoid';
+import bcrypt from 'bcryptjs';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
@@ -111,7 +112,7 @@ router.post('/', roomCreateLimiter, validate(createRoomSchema), async (req: Auth
         hostId: req.userId!,
         isPublic,
         maxSpeakers,
-        password: password || null,
+        password: password ? await bcrypt.hash(password, 10) : null,
       },
     });
 
@@ -220,7 +221,7 @@ router.post('/:slug/join', validate(joinRoomSchema), async (req: AuthRequest<{ s
 
     // Check password for private rooms (skip if host)
     if (room.password && room.hostId !== req.userId) {
-      if (!password || password !== room.password) {
+      if (!password || !(await bcrypt.compare(password, room.password))) {
         return res.status(403).json({ message: 'Invalid password', requiresPassword: true });
       }
     }
@@ -376,11 +377,13 @@ router.post('/:slug/start', async (req: AuthRequest<{ slug: string }>, res: Resp
     const startedAt = new Date();
     const timestamp = startedAt.getTime();
 
-    // Start recording via LiveKit Egress
+    // Start recording via LiveKit Egress (uploads directly to S3)
     let egressId: string | null = null;
+    let recordingFileUrl: string | null = null;
     try {
       const result = await startRoomRecording(room.slug, timestamp);
       egressId = result.egressId;
+      recordingFileUrl = result.fileUrl;
       logRecording('start', room.slug, egressId);
     } catch (egressError) {
       logRecording('error', room.slug, undefined, (egressError as Error).message);
@@ -393,6 +396,7 @@ router.post('/:slug/start', async (req: AuthRequest<{ slug: string }>, res: Resp
         status: 'live',
         startedAt,
         egressId,
+        recordingFileUrl,
       },
     });
 
@@ -456,12 +460,15 @@ router.post('/:slug/end', async (req: AuthRequest<{ slug: string }>, res: Respon
           ? Math.floor((Date.now() - room.startedAt.getTime()) / 1000)
           : null;
 
-        recordingData = {
-          roomId: room.id,
-          fileUrl: `recordings/${room.slug}-${room.startedAt?.getTime()}.mp3`,
-          durationSeconds,
-          format: 'mp3',
-        };
+        // Use the S3 URL stored at recording start time
+        if (room.recordingFileUrl) {
+          recordingData = {
+            roomId: room.id,
+            fileUrl: room.recordingFileUrl,
+            durationSeconds,
+            format: 'mp3',
+          };
+        }
       } catch (egressError) {
         logRecording('error', room.slug, room.egressId, (egressError as Error).message);
         // Continue ending the room even if recording stop fails
@@ -483,7 +490,8 @@ router.post('/:slug/end', async (req: AuthRequest<{ slug: string }>, res: Respon
         data: {
           status: 'ended',
           endedAt: new Date(),
-          egressId: null, // Clear egress ID
+          egressId: null,
+          recordingFileUrl: null,
         },
       });
 

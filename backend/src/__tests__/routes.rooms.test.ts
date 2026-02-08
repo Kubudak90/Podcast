@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
+import bcrypt from 'bcryptjs';
 import { generateToken } from '../middleware/auth.js';
 
 // Mock modules - factories must not reference external variables
@@ -54,7 +55,7 @@ vi.mock('../lib/prisma.js', () => {
 
 vi.mock('../lib/livekit.js', () => ({
   createLiveKitToken: vi.fn().mockResolvedValue('mock-token'),
-  startRoomRecording: vi.fn().mockResolvedValue({ egressId: 'mock-egress-id' }),
+  startRoomRecording: vi.fn().mockResolvedValue({ egressId: 'mock-egress-id', filepath: 'recordings/test.mp3', fileUrl: 'https://s3.example.com/podchat-recordings/recordings/test.mp3' }),
   stopRoomRecording: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -274,6 +275,7 @@ describe('Room Routes', () => {
     });
 
     it('should require password for private room', async () => {
+      const hashedPassword = await bcrypt.hash('secret123', 10);
       const mockRoom = {
         id: 'room-123',
         slug: 'abc12345',
@@ -282,7 +284,7 @@ describe('Room Routes', () => {
         status: 'waiting',
         maxSpeakers: 10,
         isPublic: false,
-        password: 'secret123',
+        password: hashedPassword,
         createdAt: new Date(),
         startedAt: null,
         endedAt: null,
@@ -300,6 +302,7 @@ describe('Room Routes', () => {
     });
 
     it('should join private room with correct password', async () => {
+      const hashedPassword = await bcrypt.hash('secret123', 10);
       const mockRoom = {
         id: 'room-123',
         slug: 'abc12345',
@@ -308,7 +311,7 @@ describe('Room Routes', () => {
         status: 'waiting',
         maxSpeakers: 10,
         isPublic: false,
-        password: 'secret123',
+        password: hashedPassword,
         createdAt: new Date(),
         startedAt: null,
         endedAt: null,
@@ -333,6 +336,7 @@ describe('Room Routes', () => {
     });
 
     it('should reject wrong password', async () => {
+      const hashedPassword = await bcrypt.hash('secret123', 10);
       const mockRoom = {
         id: 'room-123',
         slug: 'abc12345',
@@ -341,7 +345,7 @@ describe('Room Routes', () => {
         status: 'waiting',
         maxSpeakers: 10,
         isPublic: false,
-        password: 'secret123',
+        password: hashedPassword,
         createdAt: new Date(),
         startedAt: null,
         endedAt: null,
@@ -525,6 +529,7 @@ describe('Room Routes', () => {
         maxSpeakers: 10,
         isPublic: true,
         egressId: 'mock-egress-id',
+        recordingFileUrl: 'https://s3.example.com/podchat-recordings/recordings/abc12345-123456.mp3',
         createdAt: new Date(),
         startedAt: new Date(),
         endedAt: null,

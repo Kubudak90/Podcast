@@ -37,7 +37,8 @@ model Room {
   maxSpeakers Int       @default(10)
   isPublic    Boolean   @default(true)
   password    String?   // For private rooms
-  egressId    String?   // LiveKit egress ID for recording
+  egressId        String?   // LiveKit egress ID for recording
+  recordingFileUrl String?   // S3 URL where recording will be stored
   createdAt   DateTime  @default(now())
   startedAt   DateTime?
   endedAt     DateTime?
