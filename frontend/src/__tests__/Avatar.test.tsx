@@ -34,9 +34,12 @@ describe('Avatar Component', () => {
       expect(img).toHaveAttribute('alt', 'John');
     });
 
-    it('should not show initials when image is provided', () => {
+    it('should hide initials when image is provided', () => {
       render(<Avatar name="John Doe" src="https://example.com/avatar.png" />);
-      expect(screen.queryByText('JD')).not.toBeInTheDocument();
+      const initials = screen.queryByText('JD');
+      // Initials exist as hidden fallback for failed image loads
+      expect(initials).toBeInTheDocument();
+      expect(initials?.closest('.hidden')).toBeInTheDocument();
     });
   });
 

@@ -68,11 +68,19 @@ export function Avatar({
     <img
       src={src}
       alt={name}
+      loading="lazy"
       className={`${sizes[size]} rounded-full object-cover relative z-10`}
+      onError={(e) => {
+        // Fallback to initials if image fails to load
+        (e.target as HTMLImageElement).style.display = 'none';
+        (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+      }}
     />
-  ) : (
+  ) : null;
+
+  const initialsContent = (
     <div
-      className={`${sizes[size]} ${bgColor} rounded-full flex items-center justify-center font-medium text-white relative z-10`}
+      className={`${sizes[size]} ${bgColor} rounded-full flex items-center justify-center font-medium text-white relative z-10 ${src ? 'hidden' : ''}`}
     >
       {initials}
     </div>
@@ -101,6 +109,7 @@ export function Avatar({
       )}
 
       {avatarContent}
+      {initialsContent}
 
       {/* Audio level indicator bars */}
       {showAudioLevel && isSpeaking && (

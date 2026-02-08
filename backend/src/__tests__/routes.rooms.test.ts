@@ -69,6 +69,7 @@ vi.mock('../lib/socket.js', () => ({
   emitParticipantLeft: vi.fn(),
   emitRoomStatusChanged: vi.fn(),
   emitParticipantRoleChanged: vi.fn(),
+  emitRoomUpdate: vi.fn(),
 }));
 
 // Import after mocks are defined

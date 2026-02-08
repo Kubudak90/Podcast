@@ -32,7 +32,7 @@ router.get('/rooms/:slug/chat', async (req: AuthRequest<{ slug: string }>, res: 
       },
     });
 
-    // Return in chronological order
+    // Reverse to chronological order (fetched desc to get latest N)
     res.json(
       messages.reverse().map((m: typeof messages[number]) => ({
         id: m.id,

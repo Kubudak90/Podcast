@@ -149,6 +149,9 @@ function RoomContent({ room }: { room: RoomType }) {
   const [micPermission, setMicPermission] = useState<boolean | null>(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [showMasterVolume, setShowMasterVolume] = useState(false);
+  const [isStarting, setIsStarting] = useState(false);
+  const [isEnding, setIsEnding] = useState(false);
+  const [isLeaving, setIsLeaving] = useState(false);
 
   // Socket event handlers for real-time updates
   const handleStatusChanged = useCallback((payload: { status: string; isRecording?: boolean }) => {
@@ -217,6 +220,7 @@ function RoomContent({ room }: { room: RoomType }) {
   };
 
   const handleStartRoom = async () => {
+    setIsStarting(true);
     try {
       await api.startRoom(room.slug);
       setIsLive(true);
@@ -224,20 +228,25 @@ function RoomContent({ room }: { room: RoomType }) {
     } catch (err) {
       console.error('Failed to start room:', err);
       toast.error('Yayin baslatilamadi');
+    } finally {
+      setIsStarting(false);
     }
   };
 
   const handleEndRoom = async () => {
+    setIsEnding(true);
     try {
       await api.endRoom(room.slug);
       navigate(`/room/${room.slug}/ended`);
     } catch (err) {
       console.error('Failed to end room:', err);
       toast.error('Yayin bitirilemedi');
+      setIsEnding(false);
     }
   };
 
   const handleLeave = async () => {
+    setIsLeaving(true);
     try {
       await api.leaveRoom(room.slug);
       reset();
@@ -356,18 +365,18 @@ function RoomContent({ room }: { room: RoomType }) {
           </Button>
 
           {isHost && !isLive && (
-            <Button size="lg" onClick={handleStartRoom}>
+            <Button size="lg" onClick={handleStartRoom} isLoading={isStarting}>
               Yayini Baslat
             </Button>
           )}
 
           {isHost && isLive && (
-            <Button variant="danger" size="lg" onClick={handleEndRoom}>
+            <Button variant="danger" size="lg" onClick={handleEndRoom} isLoading={isEnding}>
               Yayini Bitir
             </Button>
           )}
 
-          <Button variant="ghost" size="lg" onClick={handleLeave}>
+          <Button variant="ghost" size="lg" onClick={handleLeave} isLoading={isLeaving}>
             Ayril
           </Button>
 
